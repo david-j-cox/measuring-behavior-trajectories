@@ -1,0 +1,82 @@
+# ============================================================
+# Analysis pipeline configuration
+# ============================================================
+
+# --- Data source ---
+# Set source to "firebase" to pull from Firestore, or "local" for CSV/JSON files
+data_source: firebase
+
+# Path to Firebase service account key (required if data_source is firebase)
+# Download from: Firebase Console > Project Settings > Service Accounts > Generate new private key
+firebase_service_account_key: service-account-key.json
+
+# Firestore collection name
+firebase_collection: sessions
+
+# Local data directory (used if data_source is local)
+local_data_dir: ./data
+
+# --- Output ---
+output_dir: ./outputs
+plot_format: png  # png, svg, pdf
+dpi: 150
+
+# --- Inclusion criteria ---
+min_clicks_per_session: 50
+min_session_duration_s: 300
+exclude_test_sessions: true  # exclude sessions with isTestSession: true
+
+# --- Phase boundaries (ms from task start) ---
+phase_boundaries:
+  - {id: 1, start_ms: 0, end_ms: 90000, label: "Symmetric baseline"}
+  - {id: 2, start_ms: 90000, end_ms: 180000, label: "A advantage"}
+  - {id: 3, start_ms: 180000, end_ms: 270000, label: "B advantage"}
+  - {id: 4, start_ms: 270000, end_ms: 360000, label: "Scarcity + pulses"}
+
+# --- Bonus pulse schedule (ms relative to Phase 4 start at 270000) ---
+bonus_pulses:
+  phase4_start_ms: 270000
+  interval_ms: 12000
+  duration_ms: 3000
+  sequence: [A, B, A, B, A, B, A, B]
+
+# --- Rolling window parameters ---
+rolling_window_time_s: 15
+rolling_window_clicks: 20
+
+# --- Smoothing ---
+smoothing_window_clicks: 10
+
+# --- Phase transition analysis ---
+transition_pre_window_s: 15
+transition_post_window_s: 30
+adaptation_threshold: 0.6  # rolling prop threshold to count as "adapted"
+
+# --- Pulse analysis ---
+pulse_pre_window_s: 10
+pulse_post_window_s: 15
+
+# --- Bootstrap ---
+n_bootstrap: 1000
+
+# --- Model fitting ---
+run_models: true
+model_families:
+  - baseline
+  - matching
+  - rl
+
+# RL model settings
+rl_models:
+  n_starts: 10  # random restarts for optimization
+
+# --- Simulation ---
+n_simulations_per_model: 50
+
+# --- Trajectory clustering ---
+run_clustering: true
+n_clusters_range: [2, 5]
+
+# --- Report ---
+generate_report: true
+report_format: html  # html or markdown

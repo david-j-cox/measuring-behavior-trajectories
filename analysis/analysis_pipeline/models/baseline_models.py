@@ -1,0 +1,149 @@
+"""Baseline behavioral models: random, bias, WSLS, logistic regression."""
+
+import numpy as np
+import pandas as pd
+from scipy.optimize import minimize
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import log_loss, accuracy_score
+
+
+def fit_all_baselines(events_df: pd.DataFrame) -> pd.DataFrame:
+    """Fit all baseline models per session. Returns model comparison table."""
+    rows = []
+    for sid, sdf in events_df.groupby("session_id"):
+        sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
+        choices = sdf["choice_a"].values
+
+        if len(choices) < 10:
+            continue
+
+        # Random model
+        random_nll = -np.sum(np.log(0.5) * np.ones(len(choices)))
+        rows.append(_model_row(sid, "random", 0, random_nll, len(choices)))
+
+        # Bias model
+        bias_result = _fit_bias(choices)
+        rows.append(_model_row(sid, "bias", 1, bias_result["nll"], len(choices)))
+
+        # Win-stay lose-shift
+        if "reward_outcome" in sdf.columns:
+            wsls_result = _fit_wsls(choices, sdf["reward_outcome"].values)
+            rows.append(_model_row(sid, "wsls", 2, wsls_result["nll"], len(choices)))
+
+        # Logistic regression on recent history
+        logistic_result = _fit_logistic(sdf)
+        if logistic_result is not None:
+            rows.append(_model_row(
+                sid, "logistic", logistic_result["n_params"],
+                logistic_result["nll"], len(choices)
+            ))
+
+    return pd.DataFrame(rows)
+
+
+def _model_row(session_id, model_name, n_params, nll, n_obs):
+    """Create a standardized model comparison row."""
+    aic = 2 * n_params + 2 * nll
+    bic = n_params * np.log(n_obs) + 2 * nll
+    return {
+        "session_id": session_id,
+        "model": model_name,
+        "n_params": n_params,
+        "nll": nll,
+        "aic": aic,
+        "bic": bic,
+        "n_obs": n_obs,
+    }
+
+
+def _fit_bias(choices: np.ndarray) -> dict:
+    """Fit a constant-bias model: P(A) = p."""
+    p = np.clip(np.mean(choices), 1e-6, 1 - 1e-6)
+    nll = -np.sum(choices * np.log(p) + (1 - choices) * np.log(1 - p))
+    return {"p": p, "nll": nll}
+
+
+def _fit_wsls(choices: np.ndarray, rewards: np.ndarray) -> dict:
+    """
+    Fit WSLS model with parameters:
+    - p_stay_win: P(stay | win)
+    - p_shift_lose: P(shift | lose)
+    """
+    def neg_log_lik(params):
+        p_stay_win, p_shift_lose = params
+        p_stay_win = np.clip(p_stay_win, 1e-6, 1 - 1e-6)
+        p_shift_lose = np.clip(p_shift_lose, 1e-6, 1 - 1e-6)
+
+        ll = 0.0
+        for t in range(1, len(choices)):
+            stayed = int(choices[t] == choices[t - 1])
+            if rewards[t - 1] == 1:
+                p_stay = p_stay_win
+            else:
+                p_stay = 1 - p_shift_lose
+
+            p_choice_a = p_stay if choices[t] == choices[t - 1] else (1 - p_stay)
+            # Map to actual choice probability
+            if choices[t] == 1:
+                ll += np.log(max(p_choice_a, 1e-10))
+            else:
+                ll += np.log(max(1 - p_choice_a, 1e-10))
+
+        return -ll
+
+    result = minimize(neg_log_lik, [0.7, 0.3], bounds=[(0.01, 0.99), (0.01, 0.99)],
+                      method="L-BFGS-B")
+    return {"p_stay_win": result.x[0], "p_shift_lose": result.x[1], "nll": result.fun}
+
+
+def _fit_logistic(sdf: pd.DataFrame) -> dict:
+    """Logistic regression predicting choice from recent features."""
+    feature_cols = []
+    X_data = {}
+
+    # Previous choice
+    if "choice_a" in sdf.columns:
+        X_data["prev_choice"] = sdf["choice_a"].shift(1)
+        feature_cols.append("prev_choice")
+
+    # Previous reward
+    if "reward_outcome" in sdf.columns:
+        X_data["prev_reward"] = sdf["reward_outcome"].shift(1)
+        feature_cols.append("prev_reward")
+
+    # Previous choice x reward interaction
+    if "prev_choice" in X_data and "prev_reward" in X_data:
+        X_data["choice_x_reward"] = X_data["prev_choice"] * X_data["prev_reward"]
+        feature_cols.append("choice_x_reward")
+
+    # Run length
+    if "run_length_current" in sdf.columns:
+        X_data["run_length"] = sdf["run_length_current"]
+        feature_cols.append("run_length")
+
+    if not feature_cols:
+        return None
+
+    X = pd.DataFrame(X_data, index=sdf.index)
+    y = sdf["choice_a"].values
+
+    # Drop NaN rows (first row has NaN from shift)
+    valid = X.notna().all(axis=1)
+    X = X[valid].values
+    y = y[valid.values]
+
+    if len(y) < 10 or len(np.unique(y)) < 2:
+        return None
+
+    model = LogisticRegression(C=np.inf, max_iter=1000, solver="lbfgs")
+    model.fit(X, y)
+
+    probs = model.predict_proba(X)[:, 1]
+    nll = log_loss(y, probs, normalize=False)
+
+    return {
+        "n_params": len(feature_cols) + 1,  # +1 for intercept
+        "nll": nll,
+        "accuracy": accuracy_score(y, model.predict(X)),
+        "coefficients": dict(zip(feature_cols, model.coef_[0])),
+    }

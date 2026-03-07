@@ -6,3 +6,14 @@ package-lock.json
 
 # Firebase credentials (use firebase-config.example.js as template)
 experiment/js/firebase-config.js
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+analysis/venv/
+analysis/outputs/
+*.egg-info/
+
+# Firebase service account key
+service-account-key.json
