@@ -9,7 +9,7 @@ const UI = {
 
   _allScreenIds: [
     "screen-consent", "screen-prolific", "screen-instructions",
-    "screen-countdown", "screen-task", "screen-end"
+    "screen-countdown", "screen-task", "screen-end", "screen-mobile"
   ],
 
   init() {
@@ -20,6 +20,7 @@ const UI = {
       screenCountdown: document.getElementById("screen-countdown"),
       screenTask: document.getElementById("screen-task"),
       screenEnd: document.getElementById("screen-end"),
+      screenMobile: document.getElementById("screen-mobile"),
       consentCheckbox: document.getElementById("consent-checkbox"),
       btnConsent: document.getElementById("btn-consent"),
       prolificInput: document.getElementById("prolific-id-input"),
@@ -36,8 +37,8 @@ const UI = {
       endScore: document.getElementById("end-score"),
       endRewards: document.getElementById("end-rewards"),
       endClicks: document.getElementById("end-clicks"),
-      btnRestart: document.getElementById("btn-restart"),
-      plotCanvas: document.getElementById("plot-canvas")
+      completionCodeBox: document.getElementById("completion-code-box"),
+      completionCode: document.getElementById("completion-code")
     };
   },
 
@@ -53,7 +54,8 @@ const UI = {
       instructions: this.els.screenInstructions,
       countdown: this.els.screenCountdown,
       task: this.els.screenTask,
-      end: this.els.screenEnd
+      end: this.els.screenEnd,
+      mobile: this.els.screenMobile
     };
     if (map[name]) map[name].classList.remove("hidden");
   },
@@ -156,86 +158,12 @@ const UI = {
     }
   },
 
-  // ---- Quick-look plot ----
+  // ---- Completion code ----
 
-  drawPlot(events, config) {
-    const canvas = this.els.plotCanvas;
-    if (!canvas || events.length < 2) return;
-    const ctx = canvas.getContext("2d");
-    const W = canvas.width;
-    const H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-
-    const totalDuration = config.mainTaskDurationMs;
-    const windowMs = 15000; // 15-second rolling window
-
-    // Filter to main-task events only (phaseId > 0)
-    const mainEvents = events.filter(e => e.phaseId > 0);
-    if (mainEvents.length < 2) return;
-
-    // Compute rolling proportion of A choices
-    const points = [];
-    for (let i = 0; i < mainEvents.length; i++) {
-      const t = mainEvents[i].timestampMsFromTaskStart;
-      // Gather events within window ending at t
-      let aCount = 0, total = 0;
-      for (let j = i; j >= 0; j--) {
-        if (t - mainEvents[j].timestampMsFromTaskStart > windowMs) break;
-        if (mainEvents[j].chosenOption === "A") aCount++;
-        total++;
-      }
-      points.push({ t, propA: total > 0 ? aCount / total : 0.5 });
-    }
-
-    // Draw phase boundaries
-    ctx.strokeStyle = "#ddd";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    for (const phase of config.phases) {
-      if (phase.startMs > 0) {
-        const x = (phase.startMs / totalDuration) * W;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, H);
-        ctx.stroke();
-      }
-    }
-    ctx.setLineDash([]);
-
-    // Draw 0.5 reference line
-    ctx.strokeStyle = "#ccc";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, H / 2);
-    ctx.lineTo(W, H / 2);
-    ctx.stroke();
-
-    // Draw rolling proportion
-    ctx.strokeStyle = "#4a7cff";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const x = (points[i].t / totalDuration) * W;
-      const y = H - points[i].propA * H;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Labels
-    ctx.fillStyle = "#666";
-    ctx.font = "11px system-ui, sans-serif";
-    ctx.fillText("Prop. choosing A (15s window)", 8, 14);
-    ctx.fillText("1.0", 4, 24);
-    ctx.fillText("0.0", 4, H - 4);
-    ctx.fillText("0.5", 4, H / 2 - 4);
-
-    // Phase labels
-    ctx.fillStyle = "#999";
-    ctx.font = "10px system-ui, sans-serif";
-    for (const phase of config.phases) {
-      const x = ((phase.startMs + phase.endMs) / 2 / totalDuration) * W;
-      ctx.fillText(`P${phase.id}`, x - 6, H - 4);
+  showCompletionCode(code) {
+    if (code && this.els.completionCodeBox) {
+      this.els.completionCode.textContent = code;
+      this.els.completionCodeBox.style.display = "block";
     }
   }
 };

@@ -13,7 +13,7 @@
     <h1>Informed Consent</h1>
     <div class="consent-body">
       <p><strong>Study Title:</strong> Decision-Making Under Dynamic Conditions</p>
-      <p><strong>Principal Investigator:</strong> [Investigator Name], [Institution]</p>
+      <p><strong>Principal Investigator:</strong> David J. Cox, Endicott College</p>
       <p>
         You are being invited to participate in a research study. Please read
         the following information carefully before deciding whether to take part.
@@ -47,7 +47,7 @@
       </p>
       <p>
         <strong>Contact:</strong> If you have questions about this study, please
-        contact [investigator email].
+        contact dcox@endicott.edu.
       </p>
       <div class="consent-check">
         <label>
@@ -159,16 +159,23 @@
       </div>
     </div>
 
-    <div class="plot-container">
-      <div class="plot-title">Choice trajectory (rolling 15s proportion of A)</div>
-      <canvas id="plot-canvas" width="600" height="180"></canvas>
-    </div>
-
     <div id="upload-status" class="upload-status">Saving your data...</div>
 
-    <div class="end-actions">
-      <button id="btn-restart" class="btn-secondary">Restart</button>
+    <div class="completion-code-box" id="completion-code-box" style="display:none;">
+      <p class="completion-label">Your completion code:</p>
+      <div class="completion-code" id="completion-code"></div>
+      <p class="completion-hint">Copy this code and paste it into Prolific to confirm your participation.</p>
     </div>
+  </div>
+
+  <!-- ============ Mobile Blocker ============ -->
+  <div id="screen-mobile" class="screen hidden">
+    <h1>Desktop Required</h1>
+    <p>
+      This study requires a desktop or laptop computer with a keyboard and mouse.
+      Please reopen this link on a computer to participate.
+    </p>
+    <p>Thank you for your interest!</p>
   </div>
 
   <!-- Firebase SDK (compat for simple script-tag usage) -->
@@ -176,6 +183,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 
   <!-- App scripts: order matters -->
+  <script src="js/firebase-config.js"></script>
   <script src="js/config.js"></script>
   <script src="js/state.js"></script>
   <script src="js/logger.js"></script>

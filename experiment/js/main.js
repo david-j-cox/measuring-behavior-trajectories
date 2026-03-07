@@ -15,6 +15,7 @@
   let taskRunning = false;
   let currentMode = null; // "practice" | "main"
   let prolificId = "";
+  let experimentComplete = false;
 
   // ---- Generate IDs ----
 
@@ -26,6 +27,13 @@
 
   function init() {
     UI.init();
+
+    // Mobile / small viewport check
+    if (window.innerWidth < CONFIG.minViewportWidth) {
+      UI.showScreen("mobile");
+      return;
+    }
+
     UI.showScreen("consent");
 
     // Try to read Prolific ID from URL params
@@ -61,18 +69,23 @@
       }
     });
 
-    // Instructions → practice
+    // Instructions -> practice
     UI.els.btnStart.addEventListener("click", startPractice);
 
     // Choice buttons
     UI.els.btnA.addEventListener("click", () => handleClick("A"));
     UI.els.btnB.addEventListener("click", () => handleClick("B"));
 
-    // End screen
-    UI.els.btnRestart.addEventListener("click", restart);
-
     // Initialize Firebase
     FirebaseUpload.init(FIREBASE_CONFIG);
+
+    // Warn before leaving during task
+    window.addEventListener("beforeunload", (e) => {
+      if (taskRunning && !experimentComplete) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
   }
 
   // ---- Practice block ----
@@ -240,6 +253,7 @@
   // ---- Experiment end ----
 
   function finishExperiment() {
+    experimentComplete = true;
     const finalScore = state.cumulativeScore;
     const finalRewards = state.totalRewards;
     const finalClicks = state.clickIndex;
@@ -256,7 +270,6 @@
 
     UI.showScreen("end");
     UI.showEndStats(finalScore, finalRewards, finalClicks);
-    UI.drawPlot(logger.events, CONFIG);
 
     // Dump to console for debugging
     const dataObject = logger.getFullDataObject();
@@ -269,21 +282,15 @@
       if (result.success) {
         statusEl.textContent = "Data saved successfully.";
         statusEl.classList.add("upload-success");
+        // Show completion code after successful upload
+        UI.showCompletionCode(CONFIG.prolificCompletionCode);
       } else {
-        statusEl.textContent = "Data could not be saved. Please contact the researcher.";
+        statusEl.textContent = "Data could not be saved. Please contact dcox@endicott.edu.";
         statusEl.classList.add("upload-error");
+        // Still show completion code so participant can get credit
+        UI.showCompletionCode(CONFIG.prolificCompletionCode);
       }
     });
-  }
-
-  // ---- Restart ----
-
-  function restart() {
-    clearInterval(timerInterval);
-    taskRunning = false;
-    inCooldown = false;
-    currentMode = null;
-    UI.showScreen("consent");
   }
 
   // ---- Boot ----

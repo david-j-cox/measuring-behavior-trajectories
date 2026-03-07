@@ -361,6 +361,60 @@ body {
   margin-bottom: 8px;
 }
 
+/* Completion code */
+.completion-code-box {
+  margin: 24px 0;
+  padding: 20px;
+  background: #f0f7ff;
+  border: 2px solid #4a7cff;
+  border-radius: 10px;
+}
+
+.completion-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.completion-code {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1a1a2e;
+  letter-spacing: 0.08em;
+  font-family: "SF Mono", "Fira Code", monospace;
+  padding: 8px 0;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.completion-hint {
+  font-size: 13px;
+  color: #888;
+  margin-top: 8px;
+}
+
+/* Mobile blocker */
+#screen-mobile {
+  background: #fff;
+  border-radius: 12px;
+  padding: 48px 40px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+#screen-mobile h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: #1a1a2e;
+}
+
+#screen-mobile p {
+  font-size: 16px;
+  line-height: 1.65;
+  margin-bottom: 16px;
+  color: #444;
+}
+
 /* Upload status */
 .upload-status {
   font-size: 14px;
