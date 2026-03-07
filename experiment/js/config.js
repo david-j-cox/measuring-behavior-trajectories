@@ -67,7 +67,7 @@ const CONFIG = Object.freeze({
   // --- Prolific completion code ---
   // Shown to participants on the final screen after data upload.
   // Generate this in your Prolific study setup.
-  prolificCompletionCode: "CXXXXXXX",
+  prolificCompletionCode: "CEAMUBR9",
 
   // --- Minimum viewport width to allow participation ---
   minViewportWidth: 800,
