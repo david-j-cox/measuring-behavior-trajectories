@@ -2,17 +2,6 @@
 // config.js — All task parameters in one place
 // ============================================================
 
-// --- Firebase configuration ---
-// Replace these values with your Firebase project's config.
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCCdyjOr7cPG8nk8djHiWqP4VZIVBrFYWc",
-  authDomain: "measuring-bx-trajectories.firebaseapp.com",
-  projectId: "measuring-bx-trajectories",
-  storageBucket: "measuring-bx-trajectories.firebasestorage.app",
-  messagingSenderId: "157290135100",
-  appId: "1:157290135100:web:ce24c73bbd75bcb70f4d39"
-};
-
 const CONFIG = Object.freeze({
 
   // --- General ---
@@ -75,6 +64,14 @@ const CONFIG = Object.freeze({
   // --- Inter-condition countdown ---
   countdownSec: 5,
 
+  // --- Prolific completion code ---
+  // Shown to participants on the final screen after data upload.
+  // Generate this in your Prolific study setup.
+  prolificCompletionCode: "CXXXXXXX",
+
+  // --- Minimum viewport width to allow participation ---
+  minViewportWidth: 800,
+
   // --- Practice block uses Phase-1 parameters ---
   practice: {
     rA: 0.18, rB: 0.18,
@@ -82,20 +79,21 @@ const CONFIG = Object.freeze({
   },
 
   // --- Leaderboard (simulated past participants) ---
-  // These scores represent plausible final scores from prior sessions.
-  // Replace with real data or a backend fetch when available.
+  // These are static simulated scores shown during the task.
+  // They do NOT update from real participant data.
+  // Replace with a backend fetch when available.
   leaderboard: [
-    { name: "Player 12", score: 2480 },
-    { name: "Player 7",  score: 2210 },
-    { name: "Player 3",  score: 1950 },
-    { name: "Player 15", score: 1870 },
-    { name: "Player 9",  score: 1740 },
-    { name: "Player 1",  score: 1680 },
-    { name: "Player 11", score: 1520 },
-    { name: "Player 5",  score: 1390 },
-    { name: "Player 8",  score: 1210 },
-    { name: "Player 14", score: 1050 },
-    { name: "Player 6",  score: 890 },
-    { name: "Player 2",  score: 720 }
+    { name: "Player 3",  score: 5327 },
+    { name: "Player 12", score: 4890 },
+    { name: "Player 7",  score: 4510 },
+    { name: "Player 15", score: 4180 },
+    { name: "Player 9",  score: 3820 },
+    { name: "Player 1",  score: 3470 },
+    { name: "Player 11", score: 3150 },
+    { name: "Player 5",  score: 2880 },
+    { name: "Player 8",  score: 2590 },
+    { name: "Player 14", score: 2340 },
+    { name: "Player 6",  score: 2150 },
+    { name: "Player 2",  score: 2000 }
   ]
 });
