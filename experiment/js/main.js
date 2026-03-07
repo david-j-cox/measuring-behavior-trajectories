@@ -258,6 +258,35 @@
     const finalRewards = state.totalRewards;
     const finalClicks = state.clickIndex;
 
+    // ---- Compute validity metrics ----
+    const events = logger.events;
+    const vCfg = CONFIG.validity;
+
+    // Inactivity: sum of all inter-click gaps exceeding threshold
+    let totalInactivityMs = 0;
+    let longestGapMs = 0;
+    let inactivityGapCount = 0;
+    for (const e of events) {
+      const gap = e.timeSincePrevClickMs;
+      if (gap > longestGapMs) longestGapMs = gap;
+      if (gap > vCfg.inactivityThresholdMs) {
+        totalInactivityMs += gap;
+        inactivityGapCount++;
+      }
+    }
+
+    // Zero switches: participant chose only one option
+    const zeroSwitches = state.totalSwitches === 0;
+
+    // Unique options chosen
+    const optionsChosen = new Set(events.map(e => e.chosenOption));
+
+    // Composite flag
+    const validityFlags = [];
+    if (zeroSwitches && vCfg.zeroSwitchesFlag) validityFlags.push("zero_switches");
+    if (finalClicks < vCfg.minTotalClicks) validityFlags.push("too_few_clicks");
+    if (totalInactivityMs > vCfg.maxTotalInactivityMs) validityFlags.push("excessive_inactivity");
+
     logger.setSessionMeta({
       endTime: new Date().toISOString(),
       totalDurationCompletedMs: CONFIG.mainTaskDurationMs,
@@ -265,7 +294,15 @@
       totalClicks: finalClicks,
       totalRewards: finalRewards,
       totalSwitches: state.totalSwitches,
-      overallRewardRate: finalClicks > 0 ? +(finalRewards / finalClicks).toFixed(4) : 0
+      overallRewardRate: finalClicks > 0 ? +(finalRewards / finalClicks).toFixed(4) : 0,
+      // Validity metrics
+      totalInactivityMs,
+      longestGapMs,
+      inactivityGapCount,
+      uniqueOptionsChosen: optionsChosen.size,
+      zeroSwitches,
+      validityFlags: validityFlags.length > 0 ? validityFlags.join(",") : "none",
+      passedValidityCheck: validityFlags.length === 0
     });
 
     UI.showScreen("end");
