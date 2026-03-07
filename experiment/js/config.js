@@ -72,6 +72,14 @@ const CONFIG = Object.freeze({
   // --- Minimum viewport width to allow participation ---
   minViewportWidth: 800,
 
+  // --- Validity check thresholds ---
+  validity: {
+    inactivityThresholdMs: 10000,  // gaps longer than this count as inactive
+    maxTotalInactivityMs: 60000,   // flag if total inactivity exceeds this
+    minTotalClicks: 50,            // flag if fewer than this many clicks
+    zeroSwitchesFlag: true         // flag if participant never switched options
+  },
+
   // --- Practice block uses Phase-1 parameters ---
   practice: {
     rA: 0.18, rB: 0.18,
