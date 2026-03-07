@@ -73,8 +73,14 @@
     UI.els.btnStart.addEventListener("click", startPractice);
 
     // Choice buttons
-    UI.els.btnA.addEventListener("click", () => handleClick("A"));
-    UI.els.btnB.addEventListener("click", () => handleClick("B"));
+    UI.els.btnA.addEventListener("click", (e) => {
+      if (e.detail === 0) return; // block keyboard-triggered clicks
+      handleClick("A");
+    });
+    UI.els.btnB.addEventListener("click", (e) => {
+      if (e.detail === 0) return; // block keyboard-triggered clicks
+      handleClick("B");
+    });
 
     // Initialize Firebase
     FirebaseUpload.init(FIREBASE_CONFIG);
