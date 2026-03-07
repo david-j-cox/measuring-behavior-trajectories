@@ -1,0 +1,482 @@
+/* ============================================================
+   style.css — Clean, minimal experiment UI
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: #f5f6f8;
+  color: #222;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---- Screens ---- */
+
+.screen {
+  max-width: 680px;
+  width: 100%;
+  text-align: center;
+}
+
+/* ---- Card screens (consent, prolific, instructions, countdown) ---- */
+
+.card-screen {
+  background: #fff;
+  border-radius: 12px;
+  padding: 48px 40px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+#screen-consent,
+#screen-prolific,
+#screen-instructions,
+#screen-countdown {
+  background: #fff;
+  border-radius: 12px;
+  padding: 48px 40px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+#screen-consent h1,
+#screen-prolific h1,
+#screen-instructions h1,
+#screen-countdown h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: #1a1a2e;
+}
+
+#screen-consent p,
+#screen-prolific p,
+#screen-instructions p {
+  font-size: 16px;
+  line-height: 1.65;
+  margin-bottom: 16px;
+  color: #444;
+  text-align: left;
+}
+
+#screen-prolific p,
+#screen-countdown p {
+  text-align: center;
+}
+
+.note {
+  font-size: 14px;
+  color: #888;
+  margin-top: 20px;
+  margin-bottom: 28px;
+}
+
+/* ---- Consent ---- */
+
+.consent-body {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  padding-right: 8px;
+  text-align: left;
+}
+
+.consent-check {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f8f9fb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.consent-check label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  color: #333;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.consent-check input[type="checkbox"] {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* ---- Prolific ID ---- */
+
+.prolific-input-wrapper {
+  margin: 24px 0 8px;
+}
+
+.text-input {
+  width: 100%;
+  max-width: 360px;
+  padding: 12px 16px;
+  font-size: 16px;
+  border: 2px solid #d0d5dd;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s;
+  text-align: center;
+}
+
+.text-input:focus {
+  border-color: #4a7cff;
+}
+
+/* ---- Countdown ---- */
+
+.countdown-number {
+  font-size: 96px;
+  font-weight: 800;
+  color: #4a7cff;
+  margin: 32px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-primary {
+  display: inline-block;
+  background: #4a7cff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 14px 48px;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-primary:hover {
+  background: #3560d4;
+}
+
+/* ---- Task screen ---- */
+
+.screen-wide {
+  max-width: 1040px !important;
+}
+
+#screen-task {
+  max-width: 1040px;
+}
+
+.task-layout {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+.task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-header {
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.task-header .instruction {
+  font-size: 14px;
+  color: #666;
+}
+
+.task-meta {
+  display: flex;
+  justify-content: center;
+  gap: 48px;
+  margin-bottom: 24px;
+}
+
+.meta-item {
+  text-align: center;
+}
+
+.meta-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.meta-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a1a2e;
+  font-variant-numeric: tabular-nums;
+}
+
+#phase-label {
+  font-size: 13px;
+  color: #aaa;
+  margin-bottom: 16px;
+  min-height: 18px;
+}
+
+/* ---- Choice buttons ---- */
+
+.choice-area {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin: 32px 0;
+}
+
+.btn-choice {
+  width: 220px;
+  height: 160px;
+  border: 3px solid #d0d5dd;
+  border-radius: 16px;
+  background: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  color: #333;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.08s, background 0.12s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.btn-choice:hover:not(.cooldown) {
+  border-color: #4a7cff;
+  transform: scale(1.02);
+}
+
+.btn-choice:active:not(.cooldown) {
+  transform: scale(0.97);
+}
+
+.btn-choice.cooldown {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Flash animations */
+.btn-choice.flash-reward {
+  background: #d4f5d4;
+  border-color: #34a853;
+}
+
+.btn-choice.flash-miss {
+  background: #fde8e8;
+  border-color: #d93025;
+}
+
+/* ---- Feedback ---- */
+
+.feedback {
+  font-size: 20px;
+  font-weight: 600;
+  min-height: 32px;
+  transition: color 0.15s;
+  color: transparent;
+}
+
+.feedback.reward {
+  color: #34a853;
+}
+
+.feedback.miss {
+  color: #999;
+}
+
+/* ---- End screen ---- */
+
+#screen-end {
+  background: #fff;
+  border-radius: 12px;
+  padding: 48px 40px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+
+#screen-end h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: #1a1a2e;
+}
+
+#screen-end .thanks {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 28px;
+}
+
+.end-stats {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-bottom: 32px;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #4a7cff;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* Plot */
+.plot-container {
+  margin: 24px 0;
+}
+
+.plot-container canvas {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.plot-title {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+/* Upload status */
+.upload-status {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 20px;
+}
+
+.upload-status.upload-success {
+  color: #34a853;
+}
+
+.upload-status.upload-error {
+  color: #d93025;
+}
+
+/* End buttons */
+.end-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-secondary {
+  background: #f0f2f5;
+  color: #333;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.btn-secondary:hover {
+  background: #e2e5ea;
+}
+
+.btn-primary:disabled {
+  background: #b0c4ff;
+  cursor: not-allowed;
+}
+
+/* ---- Leaderboard ---- */
+
+.leaderboard {
+  width: 220px;
+  flex-shrink: 0;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 16px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+
+.leaderboard-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.2s;
+}
+
+.lb-rank {
+  width: 24px;
+  font-weight: 700;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.lb-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #444;
+}
+
+.lb-score {
+  font-weight: 600;
+  color: #555;
+  margin-left: 8px;
+}
+
+.lb-row.lb-you {
+  background: #eef3ff;
+  font-weight: 700;
+}
+
+.lb-row.lb-you .lb-name {
+  color: #4a7cff;
+}
+
+.lb-row.lb-you .lb-score {
+  color: #4a7cff;
+}
+
+.lb-row.lb-you .lb-rank {
+  color: #4a7cff;
+}

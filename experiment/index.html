@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Foraging Task</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ============ Consent Screen ============ -->
+  <div id="screen-consent" class="screen">
+    <h1>Informed Consent</h1>
+    <div class="consent-body">
+      <p><strong>Study Title:</strong> Decision-Making Under Dynamic Conditions</p>
+      <p><strong>Principal Investigator:</strong> [Investigator Name], [Institution]</p>
+      <p>
+        You are being invited to participate in a research study. Please read
+        the following information carefully before deciding whether to take part.
+      </p>
+      <p>
+        <strong>Purpose:</strong> This study investigates how people make
+        repeated choices when outcomes may change over time.
+      </p>
+      <p>
+        <strong>What you will do:</strong> You will play a short game (approximately
+        7 minutes total) in which you click buttons to earn points. There is a brief
+        practice round followed by a main game.
+      </p>
+      <p>
+        <strong>Risks:</strong> There are no known risks beyond those of everyday
+        computer use. You may experience mild boredom or fatigue.
+      </p>
+      <p>
+        <strong>Benefits:</strong> There are no direct benefits to you. Your
+        participation will contribute to scientific understanding of decision-making.
+      </p>
+      <p>
+        <strong>Confidentiality:</strong> Your responses will be recorded with an
+        anonymous identifier. No personally identifying information will be collected
+        beyond your Prolific ID, which is stored separately from your data.
+      </p>
+      <p>
+        <strong>Voluntary participation:</strong> Your participation is entirely
+        voluntary. You may withdraw at any time by closing your browser, with no
+        penalty.
+      </p>
+      <p>
+        <strong>Contact:</strong> If you have questions about this study, please
+        contact [investigator email].
+      </p>
+      <div class="consent-check">
+        <label>
+          <input type="checkbox" id="consent-checkbox">
+          I have read and understood the information above, and I voluntarily
+          agree to participate in this study.
+        </label>
+      </div>
+    </div>
+    <button id="btn-consent" class="btn-primary" disabled>Continue</button>
+  </div>
+
+  <!-- ============ Prolific ID Screen ============ -->
+  <div id="screen-prolific" class="screen hidden">
+    <h1>Participant Information</h1>
+    <p>Please enter your Prolific ID below to continue.</p>
+    <div class="prolific-input-wrapper">
+      <input type="text" id="prolific-id-input" class="text-input"
+             placeholder="Enter your Prolific ID" autocomplete="off" spellcheck="false">
+    </div>
+    <p class="note">Your Prolific ID is used only to match your data with your payment. It is stored separately from your responses.</p>
+    <button id="btn-prolific" class="btn-primary" disabled>Continue</button>
+  </div>
+
+  <!-- ============ Instructions Screen ============ -->
+  <div id="screen-instructions" class="screen hidden">
+    <h1>Point Foraging Game</h1>
+    <p>
+      In this game, your goal is to earn as many points as possible before time
+      runs out. You will see two buttons: <strong>Option A</strong> and
+      <strong>Option B</strong>.
+    </p>
+    <p>
+      Click either button at any time. Sometimes a click will earn you points
+      and sometimes it will not. The way points are earned may change over time,
+      so pay attention and adjust your strategy as needed.
+    </p>
+    <p>
+      Try to earn as many points as you can!
+    </p>
+    <p class="note">
+      You will start with a short 20-second practice round, followed by the
+      main 6-minute game.
+    </p>
+    <button id="btn-start" class="btn-primary">Start Practice</button>
+  </div>
+
+  <!-- ============ Countdown Screen ============ -->
+  <div id="screen-countdown" class="screen hidden">
+    <h1>Practice Complete</h1>
+    <p>Nice work! The main game will begin shortly.</p>
+    <p>Your practice score has been reset. Try to earn as many points as you can!</p>
+    <div class="countdown-number" id="countdown-number">5</div>
+  </div>
+
+  <!-- ============ Task Screen ============ -->
+  <div id="screen-task" class="screen screen-wide hidden">
+    <div class="task-layout">
+      <div class="task-main">
+        <div class="task-header">
+          <span class="instruction">Earn as many points as you can before time runs out.</span>
+        </div>
+
+        <div class="task-meta">
+          <div class="meta-item">
+            <div class="meta-label">Time Left</div>
+            <div class="meta-value" id="timer">6:00</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Score</div>
+            <div class="meta-value" id="score">0</div>
+          </div>
+        </div>
+
+        <div id="phase-label"></div>
+
+        <div class="choice-area">
+          <button id="btn-a" class="btn-choice">Option A</button>
+          <button id="btn-b" class="btn-choice">Option B</button>
+        </div>
+
+        <div id="feedback" class="feedback">&nbsp;</div>
+      </div>
+
+      <div class="leaderboard" id="leaderboard">
+        <div class="leaderboard-title">Leaderboard</div>
+        <div class="leaderboard-list" id="leaderboard-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ End Screen ============ -->
+  <div id="screen-end" class="screen hidden">
+    <h1>Game Complete</h1>
+    <p class="thanks">Thank you for participating!</p>
+
+    <div class="end-stats">
+      <div class="stat">
+        <div class="stat-value" id="end-score">0</div>
+        <div class="stat-label">Total Points</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="end-rewards">0</div>
+        <div class="stat-label">Rewards Earned</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="end-clicks">0</div>
+        <div class="stat-label">Total Clicks</div>
+      </div>
+    </div>
+
+    <div class="plot-container">
+      <div class="plot-title">Choice trajectory (rolling 15s proportion of A)</div>
+      <canvas id="plot-canvas" width="600" height="180"></canvas>
+    </div>
+
+    <div id="upload-status" class="upload-status">Saving your data...</div>
+
+    <div class="end-actions">
+      <button id="btn-restart" class="btn-secondary">Restart</button>
+    </div>
+  </div>
+
+  <!-- Firebase SDK (compat for simple script-tag usage) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+  <!-- App scripts: order matters -->
+  <script src="js/config.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/logger.js"></script>
+  <script src="js/firebase-upload.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
