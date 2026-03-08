@@ -31,6 +31,11 @@ def run_changepoint_analysis(events_df: pd.DataFrame, config: dict,
     return results
 
 
+def bocpd_gaussian(data, hazard_rate=1/100, **kwargs):
+    """Public entry point for BOCPD. See _bocpd_gaussian."""
+    return _bocpd_gaussian(data, hazard_rate=hazard_rate, **kwargs)
+
+
 def _bocpd_gaussian(data, hazard_rate=1/100, mu0=0.5, kappa0=1.0,
                     alpha0=1.0, beta0=0.05):
     """

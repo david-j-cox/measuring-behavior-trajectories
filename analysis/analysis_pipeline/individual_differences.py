@@ -446,7 +446,7 @@ def _plot_pca_biplot(X_pca, labels, pca, feature_cols, n_keep, session_ids,
     n_clusters = len(np.unique(labels))
     palette = sns.color_palette("Set2", n_clusters)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(21, 6))
 
     # Left: PC1 vs PC2 scatter
     ax = axes[0]
@@ -461,7 +461,7 @@ def _plot_pca_biplot(X_pca, labels, pca, feature_cols, n_keep, session_ids,
     ax.set_title("PCA Scores by Cluster")
     ax.legend(fontsize=9)
 
-    # Right: Loading vectors
+    # Middle: Loading vectors
     ax2 = axes[1]
     loadings = pca.components_[:2].T  # (n_features, 2)
     for i, feat in enumerate(feature_cols):
@@ -480,6 +480,43 @@ def _plot_pca_biplot(X_pca, labels, pca, feature_cols, n_keep, session_ids,
     ax2.set_ylim(-max_load, max_load)
     ax2.axhline(0, color="gray", linewidth=0.5, alpha=0.3)
     ax2.axvline(0, color="gray", linewidth=0.5, alpha=0.3)
+
+    # Right: Combined biplot — scores + loadings on shared axes
+    ax3 = axes[2]
+    for cl in range(n_clusters):
+        mask = labels == cl
+        ax3.scatter(X_pca[mask, 0], X_pca[mask, 1],
+                    color=palette[cl], s=60, alpha=0.7,
+                    edgecolors="white", linewidths=0.5,
+                    label=f"Cluster {cl} (n={mask.sum()})")
+
+    # Scale loadings so arrows are visible alongside scores.
+    # Use the ratio of score range to max loading magnitude.
+    score_range = max(np.abs(X_pca[:, :2]).max(), 1e-6)
+    load_max = max(np.abs(loadings).max(), 1e-6)
+    scale = score_range / load_max * 0.8
+
+    ax3_load = ax3.twinx()
+    ax3_load_x = ax3.twiny()
+    # Remove tick labels on secondary axes to avoid clutter
+    ax3_load.set_yticks([])
+    ax3_load_x.set_xticks([])
+
+    for i, feat in enumerate(feature_cols):
+        dx, dy = loadings[i, 0] * scale, loadings[i, 1] * scale
+        ax3.annotate("", xy=(dx, dy), xytext=(0, 0),
+                     arrowprops=dict(arrowstyle="->", color="firebrick",
+                                     lw=1.5, alpha=0.8))
+        ax3.text(dx * 1.10, dy * 1.10, _short_name(feat),
+                 fontsize=6.5, ha="center", va="center",
+                 color="firebrick", fontweight="bold")
+
+    ax3.axhline(0, color="gray", linewidth=0.5, alpha=0.3)
+    ax3.axvline(0, color="gray", linewidth=0.5, alpha=0.3)
+    ax3.set_xlabel(f"PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)")
+    ax3.set_ylabel(f"PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)")
+    ax3.set_title("Combined Biplot: Scores + Loadings")
+    ax3.legend(fontsize=8, loc="lower right")
 
     plt.tight_layout()
     fig.savefig(os.path.join(fig_dir, f"pca_biplot.{fmt}"),

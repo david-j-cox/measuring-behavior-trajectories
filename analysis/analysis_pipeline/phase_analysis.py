@@ -19,16 +19,17 @@ def run_phase_analysis(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     # Per-phase descriptives
     results["phase_descriptives"] = _phase_descriptives(events_df, phase_boundaries)
 
-    # Phase transition plots
-    _plot_phase_transitions(events_df, config, fig_dir, fmt)
+    # Pre-post phase comparison (run before plotting so effect sizes are available)
+    results["pre_post_tests"] = _pre_post_comparisons(events_df, phase_boundaries, config)
+
+    # Phase transition plots with effect size annotations
+    _plot_phase_transitions(events_df, config, fig_dir, fmt,
+                            pre_post_tests=results["pre_post_tests"])
 
     # Adaptation lag analysis
     if "adaptation_lag_phase2_s" in metrics_df.columns:
         results["adaptation_lags"] = _adaptation_lag_summary(metrics_df)
         _plot_adaptation_lags(metrics_df, fig_dir, fmt, config)
-
-    # Pre-post phase comparison
-    results["pre_post_tests"] = _pre_post_comparisons(events_df, phase_boundaries, config)
 
     return results
 
@@ -60,7 +61,8 @@ def _phase_descriptives(events_df: pd.DataFrame, phase_boundaries: list) -> pd.D
 
 
 def _plot_phase_transitions(events_df: pd.DataFrame, config: dict,
-                            fig_dir: str, fmt: str):
+                            fig_dir: str, fmt: str,
+                            pre_post_tests: list | None = None):
     """Plot behavior around each phase transition."""
     phase_boundaries = config.get("phase_boundaries", [])
     pre_s = config.get("transition_pre_window_s", 15)
@@ -107,7 +109,15 @@ def _plot_phase_transitions(events_df: pd.DataFrame, config: dict,
         ax.axhline(0.5, color="gray", linestyle="--", alpha=0.4)
         ax.set_xlabel("Time relative to transition (s)")
         ax.set_ylabel("P(Choose A)")
-        ax.set_title(f"{tr['from']['label']} → {tr['to']['label']}")
+        title = f"{tr['from']['label']} → {tr['to']['label']}"
+        # Add effect size annotation if available
+        if pre_post_tests:
+            trans_key = f"Phase {tr['from']['id']} → {tr['to']['id']}"
+            for ppt in pre_post_tests:
+                if ppt["transition"] == trans_key:
+                    title += f"\nd = {ppt['cohens_d']:.2f}, p = {ppt['p_value']:.3f}"
+                    break
+        ax.set_title(title)
         ax.set_ylim(0, 1)
 
     plt.tight_layout()
@@ -158,6 +168,15 @@ def _plot_adaptation_lags(metrics_df: pd.DataFrame, fig_dir: str,
     plt.close(fig)
 
 
+def _cohens_d_paired(pre, post):
+    """Compute Cohen's d for paired samples: d = mean(diff) / std(diff)."""
+    diff = np.array(post) - np.array(pre)
+    sd = np.std(diff, ddof=1)
+    if sd == 0:
+        return np.nan
+    return np.mean(diff) / sd
+
+
 def _pre_post_comparisons(events_df: pd.DataFrame, phase_boundaries: list,
                           config: dict) -> list:
     """Paired pre-post comparisons of choice proportion at phase transitions."""
@@ -181,6 +200,7 @@ def _pre_post_comparisons(events_df: pd.DataFrame, phase_boundaries: list,
 
         if len(pre_data) >= 3:
             t_stat, p_val = stats.ttest_rel(pre_data, post_data)
+            d = _cohens_d_paired(pre_data, post_data)
             results.append({
                 "transition": f"Phase {phase_boundaries[i-1]['id']} → {phase_boundaries[i]['id']}",
                 "n_sessions": len(pre_data),
@@ -189,6 +209,7 @@ def _pre_post_comparisons(events_df: pd.DataFrame, phase_boundaries: list,
                 "mean_diff": np.mean(np.array(post_data) - np.array(pre_data)),
                 "t_stat": t_stat,
                 "p_value": p_val,
+                "cohens_d": d,
             })
 
     return results

@@ -22,6 +22,11 @@ def generate_all_tables(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     tables["table4_pulse_response"] = _table4_pulse_response(events_df, config)
     tables["table5_model_fits"] = _table5_model_fits(analysis_results)
 
+    # Glossary table is standalone (no data dependencies)
+    glossary_df = generate_glossary_table(os.path.join(output_dir, "manuscript"))
+    if glossary_df is not None and len(glossary_df) > 0:
+        tables["glossary_dynamical_systems"] = glossary_df
+
     for name, df in tables.items():
         if df is not None and len(df) > 0:
             df.to_csv(os.path.join(tbl_dir, f"{name}.csv"), index=False)
@@ -287,3 +292,251 @@ def _table5_model_fits(analysis_results: dict) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+# ── Glossary Table ─────────────────────────────────────────────────────────
+
+def generate_glossary_table(output_dir: str) -> pd.DataFrame:
+    """Generate a glossary mapping dynamical systems concepts to
+    behavior-analytic equivalents.
+
+    Writes both CSV and Markdown to ``output_dir/tables/``.  Returns the
+    glossary as a DataFrame.
+    """
+    entries = [
+        {
+            "Dynamical Systems Term": "Attractor",
+            "Definition": (
+                "A state or set of states toward which a system tends to evolve "
+                "over time, regardless of starting conditions."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Steady-state preference / equilibrium response allocation"
+            ),
+            "Analysis Method(s)": "Phase-space reconstruction; RQA",
+        },
+        {
+            "Dynamical Systems Term": "Trajectory",
+            "Definition": (
+                "The path traced by a system through its state space as it "
+                "evolves over time."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Behavioral time series / response path over time"
+            ),
+            "Analysis Method(s)": "Time-series construction; all pipeline steps",
+        },
+        {
+            "Dynamical Systems Term": "Phase space / State space",
+            "Definition": (
+                "A multi-dimensional space in which each axis represents one "
+                "variable of the system, so that every possible state "
+                "corresponds to a unique point."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Multi-dimensional representation of behavior (e.g., choice "
+                "proportion \u00d7 reward rate plotted together)"
+            ),
+            "Analysis Method(s)": "Delay embedding; phase-space reconstruction",
+        },
+        {
+            "Dynamical Systems Term": "Bifurcation",
+            "Definition": (
+                "A qualitative change in the system's dynamics (e.g., number "
+                "or stability of attractors) caused by a smooth change in a "
+                "control parameter."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Regime shift / abrupt change in contingency\u2013behavior "
+                "relationship"
+            ),
+            "Analysis Method(s)": "Changepoint detection; phase-transition analysis",
+        },
+        {
+            "Dynamical Systems Term": "Recurrence",
+            "Definition": (
+                "The property of a trajectory returning to a neighborhood of "
+                "a previously visited state in phase space."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Pattern revisitation / returning to a previously observed "
+                "behavioral state"
+            ),
+            "Analysis Method(s)": "Recurrence Quantification Analysis (RQA)",
+        },
+        {
+            "Dynamical Systems Term": "Determinism (RQA)",
+            "Definition": (
+                "The proportion of recurrent points that fall on diagonal "
+                "lines in a recurrence plot, indicating predictable sequential "
+                "structure."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Sequential predictability / the degree to which behavioral "
+                "sequences form repeating patterns"
+            ),
+            "Analysis Method(s)": "Recurrence Quantification Analysis (RQA)",
+        },
+        {
+            "Dynamical Systems Term": "Hurst exponent / DFA \u03b1",
+            "Definition": (
+                "A scaling exponent that quantifies the degree of long-range "
+                "temporal correlations in a time series. Values above 0.5 "
+                "indicate persistent (positively correlated) fluctuations."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Long-range dependence / behavioral persistence or memory "
+                "across time scales"
+            ),
+            "Analysis Method(s)": "Detrended Fluctuation Analysis (DFA); fractal analysis",
+        },
+        {
+            "Dynamical Systems Term": "Sample entropy",
+            "Definition": (
+                "A measure of the complexity or irregularity of a time series, "
+                "defined as the negative natural logarithm of the conditional "
+                "probability that similar patterns remain similar at the next "
+                "point."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Behavioral complexity/regularity / unpredictability of the "
+                "choice sequence"
+            ),
+            "Analysis Method(s)": "Entropy estimation; fractal analysis",
+        },
+        {
+            "Dynamical Systems Term": "Changepoint",
+            "Definition": (
+                "A point in time at which the statistical properties of a "
+                "time series (mean, variance, or both) shift abruptly."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Transition point / the moment behavior shifts to a new "
+                "regime (cf. transition states in steady-state designs)"
+            ),
+            "Analysis Method(s)": "Bayesian Online Changepoint Detection (BOCPD)",
+        },
+        {
+            "Dynamical Systems Term": "Embedding dimension",
+            "Definition": (
+                "The number of time-delayed copies of a scalar time series "
+                "needed to unfold the system's dynamics in a reconstructed "
+                "phase space (per Takens' theorem)."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Effective degrees of freedom / the minimum number of lagged "
+                "variables needed to reconstruct the system's dynamics"
+            ),
+            "Analysis Method(s)": "Delay embedding; simplex projection",
+        },
+        {
+            "Dynamical Systems Term": "Convergent cross-mapping (CCM)",
+            "Definition": (
+                "A method for detecting causal relationships between time "
+                "series by testing whether the state-space reconstruction of "
+                "one variable can predict the other, with prediction improving "
+                "as more data are used."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Causal coupling / testing whether one variable (e.g., reward) "
+                "causally drives another (e.g., choice) beyond correlation"
+            ),
+            "Analysis Method(s)": "Convergent cross-mapping (CCM)",
+        },
+        {
+            "Dynamical Systems Term": "S-Map (state-dependent mapping)",
+            "Definition": (
+                "A locally weighted forecasting method that allows the "
+                "relationship between variables to change depending on the "
+                "current location in state space."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Context-sensitive dynamics / whether the rules governing "
+                "behavior change depending on the current behavioral state"
+            ),
+            "Analysis Method(s)": "S-Map analysis",
+        },
+        {
+            "Dynamical Systems Term": "Simplex projection",
+            "Definition": (
+                "A nearest-neighbor forecasting method that predicts future "
+                "values by finding similar past states in a delay-embedded "
+                "phase space and averaging their successors."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Nonlinear forecasting / predicting future behavior from past "
+                "trajectories using nearest-neighbor methods"
+            ),
+            "Analysis Method(s)": "Simplex projection; embedding dimension estimation",
+        },
+        {
+            "Dynamical Systems Term": "Hysteresis",
+            "Definition": (
+                "The dependence of a system's state on its history, so that "
+                "the path followed when a parameter increases differs from "
+                "the path when it decreases."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Path dependence / behavior depending not just on current "
+                "contingencies but on the history of contingency changes"
+            ),
+            "Analysis Method(s)": "Phase-transition analysis; transition metrics",
+        },
+        {
+            "Dynamical Systems Term": "Laminarity (RQA)",
+            "Definition": (
+                "The proportion of recurrent points that form vertical lines "
+                "in a recurrence plot, reflecting epochs where the system "
+                "remains in roughly the same state."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Behavioral trapping / tendency to persist in the same state "
+                "for extended periods"
+            ),
+            "Analysis Method(s)": "Recurrence Quantification Analysis (RQA)",
+        },
+        {
+            "Dynamical Systems Term": "Hidden Markov Model (HMM)",
+            "Definition": (
+                "A probabilistic model positing a sequence of unobserved "
+                "(hidden) states, each generating observations according to "
+                "state-specific emission distributions, with transitions "
+                "governed by a Markov chain."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Latent behavioral states / unobserved internal states that "
+                "generate observable choice patterns (cf. \u201cresponse states\u201d "
+                "in behavior analysis)"
+            ),
+            "Analysis Method(s)": "Hidden Markov Model fitting; state classification",
+        },
+        {
+            "Dynamical Systems Term": "Matching law",
+            "Definition": (
+                "The empirical generalization that the relative rate of "
+                "responding on an alternative matches the relative rate of "
+                "reinforcement obtained from that alternative."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Molar contingency tracking / proportional allocation of "
+                "behavior to relative reinforcement rates"
+            ),
+            "Analysis Method(s)": "Matching-law regression; RL model comparison",
+        },
+    ]
+
+    df = pd.DataFrame(entries)
+
+    tbl_dir = os.path.join(output_dir, "tables")
+    os.makedirs(tbl_dir, exist_ok=True)
+
+    csv_path = os.path.join(tbl_dir, "glossary_dynamical_systems.csv")
+    md_path = os.path.join(tbl_dir, "glossary_dynamical_systems.md")
+
+    df.to_csv(csv_path, index=False)
+    with open(md_path, "w") as f:
+        f.write(df.to_markdown(index=False))
+        f.write("\n")
+
+    print(f"Glossary table written to {tbl_dir}")
+    return df
