@@ -65,6 +65,7 @@ model_families:
   - baseline
   - matching
   - rl
+  - hmm
 
 # RL model settings
 rl_models:

@@ -11,7 +11,7 @@ from typing import Optional
 
 def set_style():
     """Set consistent plot style."""
-    sns.set_theme(style="whitegrid", font_scale=1.1)
+    sns.set_theme(style="white", font_scale=1.1)
     plt.rcParams.update({
         "figure.facecolor": "white",
         "axes.facecolor": "white",
@@ -152,14 +152,22 @@ def plot_group_summary(metrics_df: pd.DataFrame, config: dict, output_dir: str):
                     dpi=config.get("dpi", 150))
         plt.close(fig)
 
-    # Win-stay / lose-shift scatter
+    # Win-stay / lose-shift scatter colored by total rewards
     if "win_stay_rate" in metrics_df.columns and "lose_shift_rate" in metrics_df.columns:
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.scatter(metrics_df["win_stay_rate"], metrics_df["lose_shift_rate"],
-                   s=40, alpha=0.6, color="teal")
+        fig, ax = plt.subplots(figsize=(7, 6))
+        color_col = "total_rewards" if "total_rewards" in metrics_df.columns else None
+        if color_col:
+            sc = ax.scatter(metrics_df["win_stay_rate"], metrics_df["lose_shift_rate"],
+                            s=50, alpha=0.7, c=metrics_df[color_col], cmap="viridis",
+                            edgecolors="white", linewidths=0.5)
+            cbar = fig.colorbar(sc, ax=ax, pad=0.02)
+            cbar.set_label("Total Rewards Earned")
+        else:
+            ax.scatter(metrics_df["win_stay_rate"], metrics_df["lose_shift_rate"],
+                       s=50, alpha=0.7, color="teal")
         ax.set_xlabel("Win-Stay Rate")
         ax.set_ylabel("Lose-Shift Rate")
-        ax.set_title("Win-Stay vs Lose-Shift")
+        ax.set_title("Win-Stay vs Lose-Shift (colored by rewards earned)")
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.plot([0, 1], [0, 1], "--", color="gray", alpha=0.5)

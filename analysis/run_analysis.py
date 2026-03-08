@@ -19,6 +19,9 @@ from analysis_pipeline.plots import (
 from analysis_pipeline.phase_analysis import run_phase_analysis
 from analysis_pipeline.perturbation_analysis import run_perturbation_analysis
 from analysis_pipeline.dynamical_analysis import run_dynamical_analysis
+from analysis_pipeline.changepoint_analysis import run_changepoint_analysis
+from analysis_pipeline.fractal_analysis import run_fractal_analysis
+from analysis_pipeline.individual_differences import run_individual_differences
 from analysis_pipeline.reports import generate_report
 
 
@@ -33,8 +36,8 @@ def main():
     parser.add_argument(
         "--steps", nargs="*", default=None,
         help="Run specific steps: load, validate, transform, metrics, "
-             "plots, phase, pulse, dynamical, models, report. "
-             "Default: run all steps."
+             "plots, phase, pulse, dynamical, changepoint, fractal, "
+             "models, individual_differences, report. Default: run all steps."
     )
     parser.add_argument(
         "--no-plots", action="store_true",
@@ -126,9 +129,21 @@ def main():
         dyn_results = run_dynamical_analysis(events_df, config, output_dir)
         analysis_results.update(dyn_results)
 
-    # ---- Step 9: Model fitting ----
+    # ---- Step 9: Change-point detection ----
+    if all_steps or "changepoint" in steps:
+        print("\n=== Step 9: Change-point detection (BOCPD) ===")
+        cp_results = run_changepoint_analysis(events_df, config, output_dir)
+        analysis_results.update(cp_results)
+
+    # ---- Step 10: Fractal analysis ----
+    if all_steps or "fractal" in steps:
+        print("\n=== Step 10: Fractal analysis (DFA, sample entropy) ===")
+        fractal_results = run_fractal_analysis(events_df, config, output_dir)
+        analysis_results.update(fractal_results)
+
+    # ---- Step 11: Model fitting ----
     if (all_steps or "models" in steps) and config.get("run_models", True):
-        print("\n=== Step 9: Fitting behavioral models ===")
+        print("\n=== Step 11: Fitting behavioral models ===")
         model_families = config.get("model_families", [])
         all_model_results = []
 
@@ -139,7 +154,7 @@ def main():
             all_model_results.append(baseline_results)
 
         if "rl" in model_families:
-            print("  Fitting RL models...")
+            print("  Fitting RL models (including phase-aware and dynamic)...")
             from analysis_pipeline.models.rl_models import fit_rl_models
             rl_results = fit_rl_models(events_df, config)
             all_model_results.append(rl_results)
@@ -150,6 +165,12 @@ def main():
             matching_results = fit_matching_models(events_df, metrics_df, config)
             all_model_results.append(matching_results)
 
+        if "hmm" in model_families:
+            print("  Fitting Hidden Markov Models...")
+            from analysis_pipeline.models.hmm_models import fit_hmm_models
+            hmm_results = fit_hmm_models(events_df, config, output_dir)
+            all_model_results.append(hmm_results)
+
         if all_model_results:
             model_comparison = pd.concat(all_model_results, ignore_index=True)
             model_comparison.to_csv(
@@ -158,13 +179,21 @@ def main():
             analysis_results["model_comparison"] = model_comparison
             print(f"  {len(model_comparison)} model fits completed.")
 
-    # ---- Step 10: Save processed data ----
+    # ---- Step 12: Individual differences (PCA + GMM clustering) ----
+    if all_steps or "individual_differences" in steps:
+        print("\n=== Step 12: Individual differences (PCA + GMM clustering) ===")
+        id_results = run_individual_differences(
+            metrics_df, analysis_results, config, output_dir
+        )
+        analysis_results.update({"individual_differences": id_results})
+
+    # ---- Step 13: Save processed data ----
     print("\n=== Saving processed data ===")
     events_df.to_csv(
         os.path.join(output_dir, "tables", "events_processed.csv"), index=False
     )
 
-    # ---- Step 11: Report ----
+    # ---- Step 14: Report ----
     if (all_steps or "report" in steps) and config.get("generate_report", True):
         print("\n=== Generating report ===")
         generate_report(metrics_df, validation_report, analysis_results,
