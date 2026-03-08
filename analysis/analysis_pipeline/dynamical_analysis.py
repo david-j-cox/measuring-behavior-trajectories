@@ -7,6 +7,49 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import correlate
 import pyEDM
+from joblib import Parallel, delayed
+
+
+# ============================================================
+# Helpers: subsampling and best-E caching
+# ============================================================
+
+def _subsample_signal(signal, target_n=200):
+    """Evenly downsample a signal to approximately target_n points."""
+    if len(signal) <= target_n:
+        return signal
+    step = len(signal) / target_n
+    indices = np.round(np.arange(0, len(signal), step)).astype(int)
+    indices = indices[indices < len(signal)]
+    return signal[indices]
+
+
+def _compute_best_E_for_session(events_df, sid, maxE=6, target_n=200):
+    """Compute optimal embedding dimension for a single session. Returns (sid, best_E) or None."""
+    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+
+    if len(signal) < 30:
+        return None
+
+    signal = _subsample_signal(signal, target_n)
+    edm_df = pd.DataFrame({"time": np.arange(len(signal)), "x": signal})
+    n = len(signal)
+
+    try:
+        simplex_out = pyEDM.EmbedDimension(
+            dataFrame=edm_df, columns="x", target="x",
+            lib=f"1 {n // 2}",
+            pred=f"{n // 2 + 1} {n}",
+            maxE=maxE, showPlot=False
+        )
+        best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+        if best_E < 1:
+            best_E = 1
+        return (sid, best_E)
+    except Exception as e:
+        print(f"  EmbedDimension failed for session {sid}: {e}")
+        return None
 
 
 def run_dynamical_analysis(events_df: pd.DataFrame, config: dict,
@@ -15,6 +58,8 @@ def run_dynamical_analysis(events_df: pd.DataFrame, config: dict,
     results = {}
     fmt = config.get("plot_format", "png")
     fig_dir = os.path.join(output_dir, "figures", "dynamical")
+    tables_dir = os.path.join(output_dir, "tables")
+    os.makedirs(tables_dir, exist_ok=True)
 
     # State-space trajectories
     _plot_state_space(events_df, config, fig_dir, fmt)
@@ -37,16 +82,35 @@ def run_dynamical_analysis(events_df: pd.DataFrame, config: dict,
     if len(rqa_results) > 0:
         _plot_rqa_summary(rqa_results, config, fig_dir, fmt)
 
+    # Pre-compute best_E for all sessions (Item 14)
+    if "rolling_choice_prop_a_clicks" in events_df.columns:
+        session_ids = events_df["session_id"].unique()
+        best_E_results = Parallel(n_jobs=-1)(
+            delayed(_compute_best_E_for_session)(events_df, sid)
+            for sid in session_ids
+        )
+        best_E_cache = {sid: E for sid, E in best_E_results if (sid, E) != (None, None)}
+        # Filter out None results
+        best_E_cache = {}
+        for result in best_E_results:
+            if result is not None:
+                best_E_cache[result[0]] = result[1]
+    else:
+        best_E_cache = {}
+
     # EDM simplex projection (all participants)
-    edm_results = _run_edm_simplex(events_df, config, fig_dir, fmt)
+    edm_results = _run_edm_simplex(events_df, config, fig_dir, fmt,
+                                    tables_dir, best_E_cache)
     results["edm_simplex"] = edm_results
 
     # CCM: causal coupling between reward and choice
-    ccm_results = _run_ccm(events_df, config, fig_dir, fmt)
+    ccm_results = _run_ccm(events_df, config, fig_dir, fmt,
+                           tables_dir, best_E_cache)
     results["ccm"] = ccm_results
 
     # S-Map: state-dependent nonlinearity
-    smap_results = _run_smap(events_df, config, fig_dir, fmt)
+    smap_results = _run_smap(events_df, config, fig_dir, fmt,
+                             tables_dir, best_E_cache)
     results["smap"] = smap_results
 
     return results
@@ -291,14 +355,124 @@ def _plot_recurrence(events_df: pd.DataFrame, config: dict,
     plt.close(fig)
 
 
+# ============================================================
+# EDM Simplex Projection
+# ============================================================
+
+def _edm_simplex_single_session(events_df, sid, best_E_cache, target_n=200):
+    """Run EDM simplex for a single session. Returns dict or None."""
+    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+
+    if len(signal) < 30:
+        return None
+
+    signal = _subsample_signal(signal, target_n)
+    n = len(signal)
+    edm_df = pd.DataFrame({"time": np.arange(n), "x": signal})
+
+    try:
+        best_E = best_E_cache.get(sid)
+        if best_E is None:
+            simplex_out = pyEDM.EmbedDimension(
+                dataFrame=edm_df, columns="x", target="x",
+                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+                maxE=6, showPlot=False
+            )
+            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+            if best_E < 1:
+                best_E = 1
+
+        # Run simplex projection at the best E
+        pred_out = pyEDM.Simplex(
+            dataFrame=edm_df, columns="x", target="x",
+            lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+            E=best_E, showPlot=False
+        )
+
+        # Compute rho from the prediction
+        pred_df = pred_out.dropna(subset=["Predictions"])
+        if len(pred_df) > 0:
+            rho = np.corrcoef(pred_df["Observations"], pred_df["Predictions"])[0, 1]
+        else:
+            rho = np.nan
+
+        return {
+            "session_id": sid,
+            "best_E": best_E,
+            "rho": rho,
+            "n_points": n,
+            "pred_out": pred_out,  # For plotting
+        }
+
+    except Exception as e:
+        print(f"  EDM failed for session {sid}: {e}")
+        return None
+
+
 def _run_edm_simplex(events_df: pd.DataFrame, config: dict,
-                     fig_dir: str, fmt: str) -> pd.DataFrame:
+                     fig_dir: str, fmt: str,
+                     tables_dir: str, best_E_cache: dict) -> pd.DataFrame:
     """Run simplex projection (EDM) for each participant and plot observed vs predicted."""
     if "rolling_choice_prop_a_clicks" not in events_df.columns:
         return pd.DataFrame()
 
     session_ids = events_df["session_id"].unique()
+    csv_path = os.path.join(tables_dir, "edm_simplex.csv")
+
+    # Session-level result caching (Item 16)
+    existing_df = pd.DataFrame()
+    sessions_to_compute = list(session_ids)
+    if os.path.exists(csv_path):
+        existing_df = pd.read_csv(csv_path)
+        already_done = set(existing_df["session_id"].unique())
+        sessions_to_compute = [s for s in session_ids if s not in already_done]
+        if len(sessions_to_compute) == 0:
+            print("  EDM simplex: all sessions cached, skipping computation.")
+            # Still need to generate plot from cached data
+            _plot_edm_simplex_from_df(existing_df, events_df, config,
+                                      fig_dir, fmt, best_E_cache)
+            return existing_df
+
+    # Parallelize across sessions (Item 12)
+    results = Parallel(n_jobs=-1)(
+        delayed(_edm_simplex_single_session)(events_df, sid, best_E_cache)
+        for sid in sessions_to_compute
+    )
+
+    # Collect results
     edm_rows = []
+    plot_data = {}  # sid -> pred_out for plotting
+    for r in results:
+        if r is not None:
+            pred_out = r.pop("pred_out")
+            edm_rows.append(r)
+            plot_data[r["session_id"]] = (pred_out, r["best_E"], r["rho"])
+
+    new_df = pd.DataFrame(edm_rows)
+
+    # Merge with existing cached results
+    if len(existing_df) > 0 and len(new_df) > 0:
+        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+    elif len(existing_df) > 0:
+        combined_df = existing_df
+    else:
+        combined_df = new_df
+
+    # Save to CSV (Item 15)
+    if len(combined_df) > 0:
+        combined_df.to_csv(csv_path, index=False)
+
+    # Plot
+    _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt)
+
+    return combined_df
+
+
+def _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt):
+    """Plot EDM simplex observed vs predicted for sessions with plot data."""
+    if len(plot_data) == 0:
+        return
 
     n_cols = min(4, len(session_ids))
     n_rows = int(np.ceil(len(session_ids) / n_cols))
@@ -308,66 +482,25 @@ def _run_edm_simplex(events_df: pd.DataFrame, config: dict,
     axes = axes.ravel()
 
     for i, sid in enumerate(session_ids):
-        sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
-        signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
-
-        if len(signal) < 30:
-            if i < len(axes):
-                axes[i].set_visible(False)
+        if i >= len(axes):
+            break
+        ax = axes[i]
+        if sid not in plot_data:
+            ax.set_visible(False)
             continue
 
-        # Build a dataframe for pyEDM
-        edm_df = pd.DataFrame({"time": np.arange(len(signal)), "x": signal})
-
-        # Find optimal embedding dimension via simplex
-        try:
-            simplex_out = pyEDM.EmbedDimension(
-                dataFrame=edm_df, columns="x", target="x",
-                lib=f"1 {len(signal) // 2}",
-                pred=f"{len(signal) // 2 + 1} {len(signal)}",
-                maxE=10, showPlot=False
-            )
-
-            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
-            if best_E < 1:
-                best_E = 1
-
-            # Run simplex projection at the best E
-            pred_out = pyEDM.Simplex(
-                dataFrame=edm_df, columns="x", target="x",
-                lib=f"1 {len(signal) // 2}",
-                pred=f"{len(signal) // 2 + 1} {len(signal)}",
-                E=best_E, showPlot=False
-            )
-
-            best_rho = simplex_out["rho"].max()
-            edm_rows.append({
-                "session_id": sid,
-                "best_E": best_E,
-                "rho": best_rho,
-                "n_points": len(signal),
-            })
-
-            # Plot observed vs predicted
-            if i < len(axes):
-                ax = axes[i]
-                pred_df = pred_out.dropna(subset=["Predictions"])
-                ax.plot(pred_df["Time"], pred_df["Observations"],
-                        color="steelblue", linewidth=0.8, label="Observed", alpha=0.7)
-                ax.plot(pred_df["Time"], pred_df["Predictions"],
-                        color="orangered", linewidth=0.8, label="Predicted", alpha=0.7)
-                ax.set_xlabel("Click index")
-                ax.set_ylabel("P(Choose A)")
-                label = f"{sid[:8]}..." if len(str(sid)) > 8 else sid
-                ax.set_title(f"{label} (E={best_E}, ρ={best_rho:.2f})", fontsize=9)
-                if i == 0:
-                    ax.legend(fontsize=7)
-
-        except Exception as e:
-            print(f"  EDM failed for session {sid}: {e}")
-            if i < len(axes):
-                axes[i].set_visible(False)
-            continue
+        pred_out, best_E, best_rho = plot_data[sid]
+        pred_df = pred_out.dropna(subset=["Predictions"])
+        ax.plot(pred_df["Time"], pred_df["Observations"],
+                color="steelblue", linewidth=0.8, label="Observed", alpha=0.7)
+        ax.plot(pred_df["Time"], pred_df["Predictions"],
+                color="orangered", linewidth=0.8, label="Predicted", alpha=0.7)
+        ax.set_xlabel("Click index")
+        ax.set_ylabel("P(Choose A)")
+        label = f"{sid[:8]}..." if len(str(sid)) > 8 else sid
+        ax.set_title(f"{label} (E={best_E}, rho={best_rho:.2f})", fontsize=9)
+        if i == 0:
+            ax.legend(fontsize=7)
 
     for j in range(len(session_ids), len(axes)):
         axes[j].set_visible(False)
@@ -378,7 +511,22 @@ def _run_edm_simplex(events_df: pd.DataFrame, config: dict,
                 dpi=config.get("dpi", 150))
     plt.close(fig)
 
-    return pd.DataFrame(edm_rows)
+
+def _plot_edm_simplex_from_df(edm_df, events_df, config, fig_dir, fmt, best_E_cache):
+    """Re-generate EDM simplex plot from cached CSV (no pyEDM recomputation)."""
+    # When loading from cache we don't have prediction traces, so we re-run
+    # simplex for plot generation only. This is fast with subsampled data.
+    session_ids = edm_df["session_id"].unique()
+    results = Parallel(n_jobs=-1)(
+        delayed(_edm_simplex_single_session)(events_df, sid, best_E_cache)
+        for sid in session_ids
+    )
+    plot_data = {}
+    for r in results:
+        if r is not None:
+            pred_out = r.pop("pred_out")
+            plot_data[r["session_id"]] = (pred_out, r["best_E"], r["rho"])
+    _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt)
 
 
 # ============================================================
@@ -597,14 +745,97 @@ def _plot_rqa_summary(rqa_df: pd.DataFrame, config: dict,
 # Convergent Cross Mapping (CCM)
 # ============================================================
 
+def _ccm_single_session(events_df, sid, best_E_cache, target_n=200):
+    """Run CCM for a single session. Returns list of row dicts."""
+    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    choice = sdf["rolling_choice_prop_a_clicks"].dropna().values
+    reward = sdf["rolling_reward_rate_clicks"].dropna().values
+
+    n = min(len(choice), len(reward))
+    if n < 50:
+        return []
+
+    choice = choice[:n]
+    reward = reward[:n]
+
+    # Subsample (Item 11)
+    if n > target_n:
+        step = n / target_n
+        indices = np.round(np.arange(0, n, step)).astype(int)
+        indices = indices[indices < n]
+        choice = choice[indices]
+        reward = reward[indices]
+        n = len(choice)
+
+    edm_df = pd.DataFrame({
+        "time": np.arange(n),
+        "choice": choice,
+        "reward": reward,
+    })
+
+    ccm_rows = []
+
+    try:
+        # Use cached best_E (Item 14)
+        best_E = best_E_cache.get(sid)
+        if best_E is None:
+            simplex_out = pyEDM.EmbedDimension(
+                dataFrame=edm_df, columns="choice", target="choice",
+                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+                maxE=6, showPlot=False
+            )
+            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+        best_E = max(2, best_E)
+
+        # Reduced library sizes: 5 evenly spaced values (Item 13)
+        lib_sizes = np.linspace(max(best_E + 2, 20), n - 10,
+                                5).astype(int)
+        lib_sizes = np.unique(lib_sizes)
+
+        for lib_size in lib_sizes:
+            try:
+                ccm_out = pyEDM.CCM(
+                    dataFrame=edm_df,
+                    columns="choice", target="reward",
+                    E=best_E,
+                    libSizes=f"{lib_size}",
+                    sample=20,  # Reduced from 50 (Item 13)
+                    showPlot=False
+                )
+                rho_cr = ccm_out["choice:reward"].mean()
+
+                ccm_out2 = pyEDM.CCM(
+                    dataFrame=edm_df,
+                    columns="reward", target="choice",
+                    E=best_E,
+                    libSizes=f"{lib_size}",
+                    sample=20,  # Reduced from 50 (Item 13)
+                    showPlot=False
+                )
+                rho_rc = ccm_out2["reward:choice"].mean()
+
+                ccm_rows.append({
+                    "session_id": sid,
+                    "E": best_E,
+                    "lib_size": lib_size,
+                    "rho_reward_causes_choice": rho_cr,
+                    "rho_choice_causes_reward": rho_rc,
+                })
+            except Exception:
+                continue
+
+    except Exception as e:
+        print(f"  CCM failed for session {sid}: {e}")
+
+    return ccm_rows
+
+
 def _run_ccm(events_df: pd.DataFrame, config: dict,
-             fig_dir: str, fmt: str) -> pd.DataFrame:
+             fig_dir: str, fmt: str,
+             tables_dir: str, best_E_cache: dict) -> pd.DataFrame:
     """
     Run Convergent Cross Mapping to test causal coupling between
     reward history and choice behavior.
-
-    CCM tests: does the choice attractor contain information about
-    reward dynamics (reward -> choice causation), and vice versa?
     """
     if "rolling_choice_prop_a_clicks" not in events_df.columns:
         return pd.DataFrame()
@@ -612,85 +843,48 @@ def _run_ccm(events_df: pd.DataFrame, config: dict,
         return pd.DataFrame()
 
     session_ids = events_df["session_id"].unique()
+    csv_path = os.path.join(tables_dir, "ccm_results.csv")
+
+    # Session-level result caching (Item 16)
+    existing_df = pd.DataFrame()
+    sessions_to_compute = list(session_ids)
+    if os.path.exists(csv_path):
+        existing_df = pd.read_csv(csv_path)
+        already_done = set(existing_df["session_id"].unique())
+        sessions_to_compute = [s for s in session_ids if s not in already_done]
+        if len(sessions_to_compute) == 0:
+            print("  CCM: all sessions cached, skipping computation.")
+            if len(existing_df) > 0:
+                _plot_ccm(existing_df, config, fig_dir, fmt)
+            return existing_df
+
+    # Parallelize across sessions (Item 12)
+    results = Parallel(n_jobs=-1)(
+        delayed(_ccm_single_session)(events_df, sid, best_E_cache)
+        for sid in sessions_to_compute
+    )
+
+    # Flatten results
     ccm_rows = []
+    for session_rows in results:
+        ccm_rows.extend(session_rows)
 
-    for sid in session_ids:
-        sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
-        choice = sdf["rolling_choice_prop_a_clicks"].dropna().values
-        reward = sdf["rolling_reward_rate_clicks"].dropna().values
+    new_df = pd.DataFrame(ccm_rows)
 
-        n = min(len(choice), len(reward))
-        if n < 50:
-            continue
+    # Merge with existing cached results
+    if len(existing_df) > 0 and len(new_df) > 0:
+        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+    elif len(existing_df) > 0:
+        combined_df = existing_df
+    else:
+        combined_df = new_df
 
-        choice = choice[:n]
-        reward = reward[:n]
+    # Save to CSV
+    if len(combined_df) > 0:
+        combined_df.to_csv(csv_path, index=False)
+        _plot_ccm(combined_df, config, fig_dir, fmt)
 
-        # Build dataframe for pyEDM
-        edm_df = pd.DataFrame({
-            "time": np.arange(n),
-            "choice": choice,
-            "reward": reward,
-        })
-
-        try:
-            # First find optimal E for choice
-            simplex_out = pyEDM.EmbedDimension(
-                dataFrame=edm_df, columns="choice", target="choice",
-                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
-                maxE=10, showPlot=False
-            )
-            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
-            best_E = max(2, best_E)
-
-            # CCM: choice cross-maps reward (tests reward -> choice causation)
-            # Use multiple library sizes to check convergence
-            lib_sizes = np.linspace(max(best_E + 2, 20), n - 10,
-                                    min(10, (n - 10 - 20) // 5 + 1)).astype(int)
-            lib_sizes = np.unique(lib_sizes)
-
-            for lib_size in lib_sizes:
-                try:
-                    ccm_out = pyEDM.CCM(
-                        dataFrame=edm_df,
-                        columns="choice", target="reward",
-                        E=best_E,
-                        libSizes=f"{lib_size}",
-                        sample=50,
-                        showPlot=False
-                    )
-                    rho_cr = ccm_out["choice:reward"].mean()
-
-                    ccm_out2 = pyEDM.CCM(
-                        dataFrame=edm_df,
-                        columns="reward", target="choice",
-                        E=best_E,
-                        libSizes=f"{lib_size}",
-                        sample=50,
-                        showPlot=False
-                    )
-                    rho_rc = ccm_out2["reward:choice"].mean()
-
-                    ccm_rows.append({
-                        "session_id": sid,
-                        "E": best_E,
-                        "lib_size": lib_size,
-                        "rho_reward_causes_choice": rho_cr,
-                        "rho_choice_causes_reward": rho_rc,
-                    })
-                except Exception:
-                    continue
-
-        except Exception as e:
-            print(f"  CCM failed for session {sid}: {e}")
-            continue
-
-    ccm_df = pd.DataFrame(ccm_rows)
-
-    if len(ccm_df) > 0:
-        _plot_ccm(ccm_df, config, fig_dir, fmt)
-
-    return ccm_df
+    return combined_df
 
 
 def _plot_ccm(ccm_df: pd.DataFrame, config: dict, fig_dir: str, fmt: str):
@@ -712,13 +906,13 @@ def _plot_ccm(ccm_df: pd.DataFrame, config: dict, fig_dir: str, fmt: str):
 
         ax.plot(sdf["lib_size"], sdf["rho_reward_causes_choice"],
                 "o-", color="dodgerblue", markersize=3, linewidth=1,
-                label="Reward → Choice")
+                label="Reward -> Choice")
         ax.plot(sdf["lib_size"], sdf["rho_choice_causes_reward"],
                 "s-", color="orangered", markersize=3, linewidth=1,
-                label="Choice → Reward")
+                label="Choice -> Reward")
 
         ax.set_xlabel("Library size")
-        ax.set_ylabel("CCM ρ")
+        ax.set_ylabel("CCM rho")
         ax.set_ylim(-0.1, 1.0)
         label = f"{sid[:8]}..." if len(str(sid)) > 8 else sid
         ax.set_title(label, fontsize=9)
@@ -739,8 +933,75 @@ def _plot_ccm(ccm_df: pd.DataFrame, config: dict, fig_dir: str, fmt: str):
 # S-Map: State-Dependent Nonlinearity
 # ============================================================
 
+def _smap_single_session(events_df, sid, best_E_cache, target_n=200):
+    """Run S-Map for a single session. Returns dict or None."""
+    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+
+    if len(signal) < 50:
+        return None
+
+    # Subsample (Item 11)
+    signal = _subsample_signal(signal, target_n)
+    n = len(signal)
+    edm_df = pd.DataFrame({"time": np.arange(n), "x": signal})
+
+    try:
+        # Use cached best_E (Item 14)
+        best_E = best_E_cache.get(sid)
+        if best_E is None:
+            simplex_out = pyEDM.EmbedDimension(
+                dataFrame=edm_df, columns="x", target="x",
+                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+                maxE=6, showPlot=False
+            )
+            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+        best_E = max(1, best_E)
+
+        # Get simplex rho at best_E
+        simplex_pred = pyEDM.Simplex(
+            dataFrame=edm_df, columns="x", target="x",
+            lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+            E=best_E, showPlot=False
+        )
+        pred_clean = simplex_pred.dropna(subset=["Predictions"])
+        if len(pred_clean) > 0:
+            simplex_rho = np.corrcoef(pred_clean["Observations"],
+                                       pred_clean["Predictions"])[0, 1]
+        else:
+            simplex_rho = np.nan
+
+        # S-Map with varying theta
+        smap_out = pyEDM.PredictNonlinear(
+            dataFrame=edm_df, columns="x", target="x",
+            lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+            E=best_E, showPlot=False
+        )
+
+        theta_col = "Theta" if "Theta" in smap_out.columns else "theta"
+        best_theta = float(smap_out.loc[smap_out["rho"].idxmax(), theta_col])
+        best_smap_rho = smap_out["rho"].max()
+
+        nonlinearity = best_smap_rho - simplex_rho
+
+        return {
+            "session_id": sid,
+            "best_E": best_E,
+            "simplex_rho": simplex_rho,
+            "best_theta": best_theta,
+            "smap_rho": best_smap_rho,
+            "nonlinearity": nonlinearity,
+            "n_points": n,
+        }
+
+    except Exception as e:
+        print(f"  S-Map failed for session {sid}: {e}")
+        return None
+
+
 def _run_smap(events_df: pd.DataFrame, config: dict,
-              fig_dir: str, fmt: str) -> pd.DataFrame:
+              fig_dir: str, fmt: str,
+              tables_dir: str, best_E_cache: dict) -> pd.DataFrame:
     """
     Run S-Map to quantify state-dependent nonlinearity.
 
@@ -751,64 +1012,44 @@ def _run_smap(events_df: pd.DataFrame, config: dict,
         return pd.DataFrame()
 
     session_ids = events_df["session_id"].unique()
-    smap_rows = []
+    csv_path = os.path.join(tables_dir, "smap_results.csv")
 
-    for sid in session_ids:
-        sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
-        signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+    # Session-level result caching (Item 16)
+    existing_df = pd.DataFrame()
+    sessions_to_compute = list(session_ids)
+    if os.path.exists(csv_path):
+        existing_df = pd.read_csv(csv_path)
+        already_done = set(existing_df["session_id"].unique())
+        sessions_to_compute = [s for s in session_ids if s not in already_done]
+        if len(sessions_to_compute) == 0:
+            print("  S-Map: all sessions cached, skipping computation.")
+            if len(existing_df) > 0:
+                _plot_smap(existing_df, config, fig_dir, fmt)
+            return existing_df
 
-        if len(signal) < 50:
-            continue
+    # Parallelize across sessions (Item 12)
+    results = Parallel(n_jobs=-1)(
+        delayed(_smap_single_session)(events_df, sid, best_E_cache)
+        for sid in sessions_to_compute
+    )
 
-        edm_df = pd.DataFrame({"time": np.arange(len(signal)), "x": signal})
+    smap_rows = [r for r in results if r is not None]
+    new_df = pd.DataFrame(smap_rows)
 
-        try:
-            # Find best E first
-            simplex_out = pyEDM.EmbedDimension(
-                dataFrame=edm_df, columns="x", target="x",
-                lib=f"1 {len(signal) // 2}",
-                pred=f"{len(signal) // 2 + 1} {len(signal)}",
-                maxE=10, showPlot=False
-            )
-            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
-            best_E = max(1, best_E)
-            simplex_rho = simplex_out["rho"].max()
+    # Merge with existing cached results
+    if len(existing_df) > 0 and len(new_df) > 0:
+        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+    elif len(existing_df) > 0:
+        combined_df = existing_df
+    else:
+        combined_df = new_df
 
-            # S-Map with varying theta
-            smap_out = pyEDM.PredictNonlinear(
-                dataFrame=edm_df, columns="x", target="x",
-                lib=f"1 {len(signal) // 2}",
-                pred=f"{len(signal) // 2 + 1} {len(signal)}",
-                E=best_E, showPlot=False
-            )
+    # Save to CSV
+    if len(combined_df) > 0:
+        combined_df.to_csv(csv_path, index=False)
+        _plot_smap(combined_df, config, fig_dir, fmt)
 
-            theta_col = "Theta" if "Theta" in smap_out.columns else "theta"
-            best_theta = float(smap_out.loc[smap_out["rho"].idxmax(), theta_col])
-            best_smap_rho = smap_out["rho"].max()
-
-            # Nonlinearity: improvement of S-Map over Simplex
-            nonlinearity = best_smap_rho - simplex_rho
-
-            smap_rows.append({
-                "session_id": sid,
-                "best_E": best_E,
-                "simplex_rho": simplex_rho,
-                "best_theta": best_theta,
-                "smap_rho": best_smap_rho,
-                "nonlinearity": nonlinearity,
-                "n_points": len(signal),
-            })
-
-        except Exception as e:
-            print(f"  S-Map failed for session {sid}: {e}")
-            continue
-
-    smap_df = pd.DataFrame(smap_rows)
-
-    if len(smap_df) > 0:
-        _plot_smap(smap_df, config, fig_dir, fmt)
-
-    return smap_df
+    return combined_df
 
 
 def _plot_smap(smap_df: pd.DataFrame, config: dict,
@@ -822,15 +1063,15 @@ def _plot_smap(smap_df: pd.DataFrame, config: dict,
     lims = [min(axes[0].get_xlim()[0], axes[0].get_ylim()[0]),
             max(axes[0].get_xlim()[1], axes[0].get_ylim()[1])]
     axes[0].plot(lims, lims, "--", color="gray", alpha=0.5)
-    axes[0].set_xlabel("Simplex ρ (linear)")
-    axes[0].set_ylabel("S-Map ρ (nonlinear)")
+    axes[0].set_xlabel("Simplex rho (linear)")
+    axes[0].set_ylabel("S-Map rho (nonlinear)")
     axes[0].set_title("Linear vs Nonlinear Prediction")
 
     # Nonlinearity distribution
     axes[1].hist(smap_df["nonlinearity"], bins=15, color="teal",
                  edgecolor="white", alpha=0.8)
     axes[1].axvline(0, color="red", linestyle="--", linewidth=1.5)
-    axes[1].set_xlabel("Nonlinearity (Δρ)")
+    axes[1].set_xlabel("Nonlinearity (delta rho)")
     axes[1].set_ylabel("Count")
     axes[1].set_title("S-Map - Simplex (>0 = nonlinear)")
 
@@ -838,9 +1079,9 @@ def _plot_smap(smap_df: pd.DataFrame, config: dict,
     axes[2].hist(smap_df["best_theta"], bins=15, color="purple",
                  edgecolor="white", alpha=0.8)
     axes[2].axvline(0, color="red", linestyle="--", linewidth=1.5)
-    axes[2].set_xlabel("Best θ")
+    axes[2].set_xlabel("Best theta")
     axes[2].set_ylabel("Count")
-    axes[2].set_title("Optimal S-Map θ (0 = linear)")
+    axes[2].set_title("Optimal S-Map theta (0 = linear)")
 
     plt.tight_layout()
     fig.savefig(os.path.join(fig_dir, f"smap_nonlinearity.{fmt}"),

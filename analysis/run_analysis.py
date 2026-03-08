@@ -22,6 +22,8 @@ from analysis_pipeline.dynamical_analysis import run_dynamical_analysis
 from analysis_pipeline.changepoint_analysis import run_changepoint_analysis
 from analysis_pipeline.fractal_analysis import run_fractal_analysis
 from analysis_pipeline.individual_differences import run_individual_differences
+from analysis_pipeline.null_comparison import run_null_comparison
+from analysis_pipeline.robustness_checks import run_robustness_checks
 from analysis_pipeline.reports import generate_report
 
 
@@ -37,11 +39,20 @@ def main():
         "--steps", nargs="*", default=None,
         help="Run specific steps: load, validate, transform, metrics, "
              "plots, phase, pulse, dynamical, changepoint, fractal, "
-             "models, individual_differences, report. Default: run all steps."
+             "models, individual_differences, null_comparison, "
+             "robustness, report. Default: run all steps."
     )
     parser.add_argument(
         "--no-plots", action="store_true",
         help="Skip plot generation."
+    )
+    parser.add_argument(
+        "--null-comparison", action="store_true",
+        help="Run null comparison analysis (generate null data and compare)."
+    )
+    parser.add_argument(
+        "--robustness", action="store_true",
+        help="Run sensitivity/robustness checks on key analysis parameters."
     )
     args = parser.parse_args()
 
@@ -167,9 +178,16 @@ def main():
 
         if "hmm" in model_families:
             print("  Fitting Hidden Markov Models...")
-            from analysis_pipeline.models.hmm_models import fit_hmm_models
-            hmm_results = fit_hmm_models(events_df, config, output_dir)
+            from analysis_pipeline.models.hmm_models import (
+                fit_hmm_models, summarize_hmm_states,
+            )
+            hmm_results, hmm_state_sequences = fit_hmm_models(
+                events_df, config, output_dir
+            )
             all_model_results.append(hmm_results)
+            hmm_summary = summarize_hmm_states(hmm_state_sequences, output_dir)
+            if len(hmm_summary) > 0:
+                analysis_results["hmm_state_summary"] = hmm_summary
 
         if all_model_results:
             model_comparison = pd.concat(all_model_results, ignore_index=True)
@@ -187,13 +205,25 @@ def main():
         )
         analysis_results.update({"individual_differences": id_results})
 
-    # ---- Step 13: Save processed data ----
+    # ---- Step 13: Null comparison ----
+    if args.null_comparison or "null_comparison" in steps:
+        print("\n=== Step 13: Null comparison analysis ===")
+        null_results = run_null_comparison(events_df, config, output_dir)
+        analysis_results.update(null_results)
+
+    # ---- Step 14: Robustness checks ----
+    if args.robustness or "robustness" in steps:
+        print("\n=== Step 14: Sensitivity/robustness checks ===")
+        robustness_results = run_robustness_checks(events_df, config, output_dir)
+        analysis_results.update({"robustness": robustness_results})
+
+    # ---- Step 15: Save processed data ----
     print("\n=== Saving processed data ===")
     events_df.to_csv(
         os.path.join(output_dir, "tables", "events_processed.csv"), index=False
     )
 
-    # ---- Step 14: Report ----
+    # ---- Step 16: Report ----
     if (all_steps or "report" in steps) and config.get("generate_report", True):
         print("\n=== Generating report ===")
         generate_report(metrics_df, validation_report, analysis_results,

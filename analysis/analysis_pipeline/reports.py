@@ -82,8 +82,16 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
         tests = analysis_results["pre_post_tests"]
         if tests:
             sections.append("<h3>Pre-Post Phase Transition Tests</h3>")
-            sections.append(_df_to_html(pd.DataFrame(tests).round(4),
-                                         "Paired t-tests"))
+            tests_df = pd.DataFrame(tests).round(4)
+            sections.append(_df_to_html(tests_df, "Paired t-tests (with Cohen's d effect size)"))
+            # Inline effect size summary
+            for t in tests:
+                d = t.get("cohens_d")
+                if d is not None and not np.isnan(d):
+                    magnitude = "large" if abs(d) >= 0.8 else "medium" if abs(d) >= 0.5 else "small"
+                    sections.append(
+                        f"<p>{t['transition']}: Cohen's d = {d:.3f} ({magnitude} effect)</p>"
+                    )
 
     if "adaptation_lags" in analysis_results:
         sections.append("<h3>Adaptation Lags</h3>")
@@ -109,9 +117,124 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
         and suggests that simple equilibrium models may be insufficient to capture
         the full structure of foraging behavior.</p>""")
 
+    # Matching Law Analysis (dedicated section)
+    if "model_comparison" in analysis_results:
+        mc = analysis_results["model_comparison"]
+        if isinstance(mc, pd.DataFrame) and len(mc) > 0:
+            matching_df = mc[mc["model"].isin(["strict_matching", "generalized_matching"])]
+            if len(matching_df) > 0:
+                sections.append("<h2>5. Matching Law Analysis</h2>")
+                sections.append("""<p>The generalized matching law (Baum, 1974) is the
+                canonical quantitative law of choice in behavior analysis. It predicts
+                that the relative allocation of behavior to an option will match the
+                relative rate of reinforcement obtained from that option, modulated by
+                sensitivity (<em>s</em>) and bias (<em>b</em>) parameters:</p>
+                <blockquote>log(B<sub>A</sub>/B<sub>B</sub>) = <em>s</em> &middot;
+                log(R<sub>A</sub>/R<sub>B</sub>) + log(<em>b</em>)</blockquote>""")
+
+                sections.append("<h3>Parameter Distributions</h3>")
+                for model_name in ["strict_matching", "generalized_matching"]:
+                    mdf = matching_df[matching_df["model"] == model_name]
+                    if len(mdf) == 0:
+                        continue
+                    label = model_name.replace("_", " ").title()
+                    s_mean = mdf["sensitivity"].mean()
+                    s_sd = mdf["sensitivity"].std()
+                    s_min = mdf["sensitivity"].min()
+                    s_max = mdf["sensitivity"].max()
+                    b_mean = mdf["bias"].mean()
+                    b_sd = mdf["bias"].std()
+                    r2_mean = mdf["r_squared"].mean()
+                    r2_sd = mdf["r_squared"].std()
+                    r2_min = mdf["r_squared"].min()
+                    r2_max = mdf["r_squared"].max()
+
+                    sections.append(f"<h4>{label}</h4>")
+                    sections.append(f"""<ul>
+                        <li><strong>Sensitivity (<em>s</em>):</strong>
+                            mean = {s_mean:.3f} (SD = {s_sd:.3f}),
+                            range = [{s_min:.3f}, {s_max:.3f}]</li>
+                        <li><strong>Bias (<em>b</em>):</strong>
+                            mean = {b_mean:.3f} (SD = {b_sd:.3f})</li>
+                        <li><strong>R&sup2;:</strong>
+                            mean = {r2_mean:.3f} (SD = {r2_sd:.3f}),
+                            range = [{r2_min:.3f}, {r2_max:.3f}]</li>
+                        <li><strong>Sessions fit:</strong> {len(mdf)}</li>
+                    </ul>""")
+
+                # Interpretation of sensitivity
+                sections.append("<h3>Interpretation</h3>")
+                all_s = matching_df["sensitivity"]
+                n_under = (all_s < 0.9).sum()
+                n_strict = ((all_s >= 0.9) & (all_s <= 1.1)).sum()
+                n_over = (all_s > 1.1).sum()
+                sections.append(f"""<p>Sensitivity values indicate how strongly choice
+                allocation tracks reinforcement ratios:</p>
+                <ul>
+                    <li><em>s</em> &lt; 1 (<strong>undermatching</strong>): Choice
+                        proportions change less than reinforcement ratios —
+                        the most common finding in behavior-analytic research.
+                        Observed in {n_under} of {len(all_s)} session fits.</li>
+                    <li><em>s</em> &asymp; 1 (<strong>strict matching</strong>):
+                        Choice proportions track reinforcement ratios
+                        proportionally. Observed in {n_strict} session fits.</li>
+                    <li><em>s</em> &gt; 1 (<strong>overmatching</strong>): Choice
+                        proportions are more extreme than reinforcement ratios,
+                        indicating strong preference for the richer option.
+                        Observed in {n_over} session fits.</li>
+                </ul>""")
+
+                # Strengths and limitations
+                sections.append("<h3>Where Matching Succeeds and Fails</h3>")
+                sections.append("""<p><strong>Strengths:</strong> The matching law
+                successfully captures <em>molar allocation</em> — the overall
+                tendency for behavior to track reinforcement across time windows.
+                It provides a well-validated, parsimonious summary of steady-state
+                choice proportions and allows direct comparison with decades of
+                behavior-analytic research on concurrent schedules.</p>
+
+                <p><strong>Limitations in this paradigm:</strong> Because the matching
+                law is an equilibrium description, it cannot capture:</p>
+                <ul>
+                    <li><strong>Transient dynamics:</strong> The trajectory of
+                        adjustment following a phase transition — how quickly and
+                        by what path behavior shifts to a new allocation.</li>
+                    <li><strong>Adaptation lags:</strong> The delay between an
+                        environmental change and the behavioral response, which
+                        varies across participants and transitions.</li>
+                    <li><strong>Phase-transition responses:</strong> Matching fits
+                        aggregate across regime changes, obscuring the distinct
+                        behavioral states revealed by HMM, change-point, and
+                        dynamical systems analyses.</li>
+                    <li><strong>Path dependence / hysteresis:</strong> The matching
+                        law predicts the same allocation for a given reinforcement
+                        ratio regardless of history, yet participants show
+                        direction-dependent behavior (see Hysteresis Analysis).</li>
+                </ul>
+
+                <p>The dynamical analyses in subsequent sections extend beyond
+                matching by characterizing the <em>transient processes</em> by which
+                matching-like equilibria are approached, disrupted, and
+                re-established after environmental regime changes.</p>""")
+
+                # Note about figures
+                fig_dir = os.path.join(output_dir, "figures")
+                matching_figs = list(Path(fig_dir).glob("matching_*.*"))
+                if matching_figs:
+                    sections.append(
+                        "<p>See <strong>Matching Law Figures</strong> below for "
+                        "sensitivity/bias distributions and log-ratio regression plots.</p>"
+                    )
+                else:
+                    sections.append(
+                        "<p><em>Note: Matching law diagnostic figures (sensitivity/bias "
+                        "distributions, log-ratio regression plots) are not yet generated "
+                        "by the plotting module. Adding these figures is recommended.</em></p>"
+                    )
+
     # Model comparison
     if "model_comparison" in analysis_results:
-        sections.append("<h2>5. Model Comparison</h2>")
+        sections.append("<h2>6. Model Comparison</h2>")
         mc = analysis_results["model_comparison"]
         if isinstance(mc, pd.DataFrame) and len(mc) > 0:
             # Aggregate by model
@@ -123,11 +246,37 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
             ).round(2).sort_values("mean_bic")
             sections.append(_df_to_html(model_summary, "Model Comparison (mean across sessions)"))
 
+    # HMM state interpretation
+    if "hmm_state_summary" in analysis_results:
+        hmm_summary = analysis_results["hmm_state_summary"]
+        if isinstance(hmm_summary, pd.DataFrame) and len(hmm_summary) > 0:
+            sections.append("<h3>HMM State Interpretation</h3>")
+            sections.append("""<p>Each HMM state is assigned a descriptive label based on
+            its mean choice-proportion emission parameter: states with high P(A) are labeled
+            <em>Exploiting A</em>, low P(A) as <em>Exploiting B</em>, and intermediate
+            values as <em>Exploring/Switching</em>.</p>""")
+            # Per-session states (exclude group-mean rows)
+            per_session = hmm_summary[hmm_summary["session_id"] != "GROUP_MEAN"]
+            display_cols = ["session_id", "state", "label",
+                            "mean_choice_a", "mean_reward"]
+            if "mean_ici" in per_session.columns:
+                display_cols.append("mean_ici")
+            avail = [c for c in display_cols if c in per_session.columns]
+            sections.append(_df_to_html(per_session[avail].round(3),
+                                         "Per-Session State Parameters"))
+            # Group-level averages
+            group_rows = hmm_summary[hmm_summary["session_id"] == "GROUP_MEAN"]
+            if len(group_rows) > 0:
+                group_disp = ["label", "mean_choice_a", "mean_reward"]
+                avail_g = [c for c in group_disp if c in group_rows.columns]
+                sections.append(_df_to_html(group_rows[avail_g].round(3),
+                                             "Group-Level State Averages"))
+
     # EDM simplex results
     if "edm_simplex" in analysis_results:
         edm_df = analysis_results["edm_simplex"]
         if isinstance(edm_df, pd.DataFrame) and len(edm_df) > 0:
-            sections.append("<h2>6. Empirical Dynamical Modeling (Simplex Projection)</h2>")
+            sections.append("<h2>7. Empirical Dynamical Modeling (Simplex Projection)</h2>")
             sections.append("""<p>Simplex projection (Sugihara &amp; May, 1990) uses
             time-delay embedding to reconstruct the attractor underlying the choice
             proportion time series. For each participant, the optimal embedding
@@ -141,7 +290,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "rqa" in analysis_results:
         rqa_df = analysis_results["rqa"]
         if isinstance(rqa_df, pd.DataFrame) and len(rqa_df) > 0:
-            sections.append("<h2>7. Recurrence Quantification Analysis (RQA)</h2>")
+            sections.append("<h2>8. Recurrence Quantification Analysis (RQA)</h2>")
             sections.append("""<p>Recurrence quantification analysis extracts metrics
             from recurrence plots to characterize the temporal structure of choice
             behavior. Key metrics include: <strong>Recurrence Rate</strong> (proportion
@@ -162,7 +311,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "ccm" in analysis_results:
         ccm_df = analysis_results["ccm"]
         if isinstance(ccm_df, pd.DataFrame) and len(ccm_df) > 0:
-            sections.append("<h2>8. Convergent Cross Mapping (CCM)</h2>")
+            sections.append("<h2>9. Convergent Cross Mapping (CCM)</h2>")
             sections.append("""<p>Convergent Cross Mapping (Sugihara et al., 2012)
             tests for causal coupling between reward dynamics and choice behavior
             using time-delay embedding. Increasing ρ with library size indicates
@@ -175,7 +324,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "smap" in analysis_results:
         smap_df = analysis_results["smap"]
         if isinstance(smap_df, pd.DataFrame) and len(smap_df) > 0:
-            sections.append("<h2>9. S-Map Nonlinearity Analysis</h2>")
+            sections.append("<h2>10. S-Map Nonlinearity Analysis</h2>")
             sections.append("""<p>S-Map analysis compares linear (Simplex, θ=0) vs
             nonlinear (S-Map, θ>0) state-space prediction. If S-Map outperforms
             Simplex (positive Δρ), the dynamics are state-dependent and nonlinear.
@@ -188,7 +337,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "changepoints" in analysis_results:
         cp_df = analysis_results["changepoints"]
         if isinstance(cp_df, pd.DataFrame) and len(cp_df) > 0:
-            sections.append("<h2>10. Change-Point Detection (BOCPD)</h2>")
+            sections.append("<h2>11. Change-Point Detection (BOCPD)</h2>")
             sections.append("""<p>Bayesian Online Change Point Detection (Adams &amp; MacKay, 2007)
             identifies points where the generative process underlying the choice time series
             changes. Unlike the fixed adaptation-lag metric, BOCPD makes no assumptions about
@@ -218,7 +367,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "dfa" in analysis_results:
         dfa_df = analysis_results["dfa"]
         if isinstance(dfa_df, pd.DataFrame) and len(dfa_df) > 0:
-            sections.append("<h2>11. Detrended Fluctuation Analysis (DFA)</h2>")
+            sections.append("<h2>12. Detrended Fluctuation Analysis (DFA)</h2>")
             sections.append("""<p>DFA characterizes the scaling properties of the choice
             time series. The DFA exponent α (≈ Hurst exponent) indicates:
             <strong>α &lt; 0.5</strong> = anti-persistent (alternation tendency),
@@ -248,7 +397,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "individual_differences" in analysis_results:
         id_results = analysis_results["individual_differences"]
         if id_results:
-            sections.append("<h2>12. Individual Differences (PCA + GMM Clustering)</h2>")
+            sections.append("<h2>13. Individual Differences (PCA + GMM Clustering)</h2>")
             sections.append("""<p>To identify behavioral phenotypes, session-level features
             were assembled from across the analysis pipeline (behavioral metrics, DFA,
             sample entropy, RQA, EDM, CCM, S-Map), standardized, and reduced via PCA.
@@ -319,7 +468,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
                         sections.append(f"<p style='margin-left:20px;'>{cl}: mean = {mn:.1f}</p>")
 
     # Figures with interpretations
-    sections.append("<h2>13. Figures</h2>")
+    sections.append("<h2>14. Figures</h2>")
     fig_dir = os.path.join(output_dir, "figures")
     fmt = config.get("plot_format", "png")
 
@@ -635,6 +784,26 @@ def _get_figure_interpretations(analysis_results: dict) -> dict:
             f"{'The ' + reward_test.get('test', '') + ' yields ' + p_str + ', ' if p_str else ''}"
             f"testing whether behavioral phenotype predicts foraging success."
         )
+
+    # -- Matching law --
+    mc = analysis_results.get("model_comparison")
+    if isinstance(mc, pd.DataFrame) and len(mc) > 0:
+        matching_df = mc[mc["model"].isin(["strict_matching", "generalized_matching"])]
+        if len(matching_df) > 0:
+            mean_s = matching_df["sensitivity"].mean()
+            mean_r2 = matching_df["r_squared"].mean()
+            interp["matching_sensitivity"] = (
+                f"Distribution of matching law sensitivity (s) parameters across sessions. "
+                f"Mean s = {mean_s:.2f} {'(undermatching)' if mean_s < 0.9 else '(near strict matching)' if mean_s <= 1.1 else '(overmatching)'}. "
+                f"The matching law captures molar allocation tendencies (mean R² = {mean_r2:.2f}) "
+                f"but cannot account for transient dynamics around phase transitions."
+            )
+            interp["matching_log_ratios"] = (
+                "Log behavior ratio vs log reinforcement ratio for each session. "
+                "Points near the identity line indicate strict matching; systematic "
+                "deviation reflects bias or sensitivity departures. The matching law "
+                "provides the equilibrium baseline that dynamical analyses extend beyond."
+            )
 
     # -- Individual session plots (generic) --
     interp["_individual_prefix"] = (

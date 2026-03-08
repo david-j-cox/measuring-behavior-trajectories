@@ -90,7 +90,91 @@ def fit_hmm_models(events_df: pd.DataFrame, config: dict,
         _plot_state_phase_alignment(events_df, all_state_sequences,
                                     config, fig_dir, fmt)
 
-    return results_df
+    return results_df, all_state_sequences
+
+
+def summarize_hmm_states(hmm_state_sequences: dict, output_dir: str) -> pd.DataFrame:
+    """Create a summary table of HMM emission parameters with descriptive labels.
+
+    Parameters
+    ----------
+    hmm_state_sequences : dict
+        Mapping of session_id -> {"states", "n_states", "transition_matrix", "means"}.
+        The ``means`` array has shape (n_states, n_features) with columns ordered as
+        [choice_a, reward_outcome, rolling_choice_prop_a_clicks, ici_s] (features
+        present may vary).
+    output_dir : str
+        Root output directory; the CSV is saved under ``output_dir/tables/``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Summary table with per-session state parameters and descriptive labels.
+    """
+    if not hmm_state_sequences:
+        return pd.DataFrame()
+
+    rows = []
+    for sid, seq in hmm_state_sequences.items():
+        means = seq["means"]  # shape (n_states, n_features)
+        n_states = seq["n_states"]
+        for s in range(n_states):
+            row = {
+                "session_id": sid,
+                "state": s,
+                "n_states": n_states,
+                "mean_choice_a": means[s, 0] if means.shape[1] > 0 else np.nan,
+                "mean_reward": means[s, 1] if means.shape[1] > 1 else np.nan,
+            }
+            if means.shape[1] > 3:
+                row["mean_ici"] = means[s, 3]
+            rows.append(row)
+
+    summary = pd.DataFrame(rows)
+
+    # Assign descriptive labels based on mean_choice_a within each session
+    labels = []
+    for _, grp in summary.groupby("session_id"):
+        choice_means = grp["mean_choice_a"].values
+        n = len(choice_means)
+        sorted_idx = np.argsort(choice_means)
+        state_labels = [""] * n
+        if n == 2:
+            state_labels[sorted_idx[0]] = "Exploiting B"
+            state_labels[sorted_idx[1]] = "Exploiting A"
+        elif n >= 3:
+            state_labels[sorted_idx[0]] = "Exploiting B"
+            state_labels[sorted_idx[-1]] = "Exploiting A"
+            for mid in sorted_idx[1:-1]:
+                state_labels[mid] = "Exploring/Switching"
+        labels.extend(state_labels)
+    summary["label"] = labels
+
+    # Group-level averages across sessions
+    group_avg = (
+        summary.groupby("label")[["mean_choice_a", "mean_reward"]]
+        .agg(["mean", "std", "count"])
+    )
+    group_avg.columns = ["_".join(c) for c in group_avg.columns]
+    group_avg = group_avg.reset_index()
+
+    # Add group averages as extra rows
+    for _, row in group_avg.iterrows():
+        summary = pd.concat([summary, pd.DataFrame([{
+            "session_id": "GROUP_MEAN",
+            "state": np.nan,
+            "n_states": np.nan,
+            "mean_choice_a": row["mean_choice_a_mean"],
+            "mean_reward": row["mean_reward_mean"],
+            "mean_ici": np.nan,
+            "label": row["label"],
+        }])], ignore_index=True)
+
+    tables_dir = os.path.join(output_dir, "tables")
+    os.makedirs(tables_dir, exist_ok=True)
+    summary.to_csv(os.path.join(tables_dir, "hmm_state_summary.csv"), index=False)
+
+    return summary
 
 
 def _fit_single_hmm(obs, n_states, n_restarts=5):

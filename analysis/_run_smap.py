@@ -15,9 +15,22 @@ if __name__ == '__main__':
     fmt = config.get("plot_format", "png")
     fig_dir = os.path.join(output_dir, "figures", "dynamical")
 
+    tables_dir = os.path.join(output_dir, "tables")
+    os.makedirs(tables_dir, exist_ok=True)
+
+    # Pre-compute best_E cache for all sessions
+    from analysis_pipeline.dynamical_analysis import _compute_best_E_for_session
+    from joblib import Parallel, delayed
+    session_ids = events_df["session_id"].unique()
+    best_E_results = Parallel(n_jobs=-1)(
+        delayed(_compute_best_E_for_session)(events_df, sid)
+        for sid in session_ids
+    )
+    best_E_cache = {r[0]: r[1] for r in best_E_results if r is not None}
+
     print("=== Running S-Map nonlinearity (section 9) ===")
     t0 = time.time()
-    smap_results = _run_smap(events_df, config, fig_dir, fmt)
+    smap_results = _run_smap(events_df, config, fig_dir, fmt, tables_dir, best_E_cache)
     elapsed = time.time() - t0
     print(f"  S-Map completed in {elapsed:.1f}s")
 

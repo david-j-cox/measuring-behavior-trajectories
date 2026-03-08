@@ -44,6 +44,15 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
 
     # ── 3.2 Dynamic Behavioral Trajectories ─────────────────────────────────
     lines.append("## 3.2 Dynamic Behavioral Trajectories\n")
+    lines.append(
+        "> **For behavior analysts:** This section treats the moment-to-moment "
+        "sequence of choices as the primary datum, rather than collapsing it "
+        "into a session-wide average. Just as a cumulative record reveals "
+        "patterns invisible in overall response rate, rolling choice "
+        "proportions reveal how preference unfolds over time. Interpreting "
+        "these trajectories is analogous to reading a cumulative record, but "
+        "for relative choice allocation rather than absolute rate.\n"
+    )
     lines.append("**Key claims:**")
     lines.append(
         "- Choice allocation was non-stationary: rolling P(A) tracked "
@@ -61,6 +70,15 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
 
     # ── 3.3 Responses to Environmental Change ───────────────────────────────
     lines.append("## 3.3 Responses to Environmental Change\n")
+    lines.append(
+        "> **For behavior analysts:** Steady-state designs intentionally "
+        "wait for transition-state effects to dissipate before measuring "
+        "behavior. This section does the opposite — it treats the transition "
+        "itself as the object of study. How quickly does behavior adjust "
+        "after a hidden contingency shift? This is directly analogous to "
+        "examining transition-state data in a multiple schedule, but without "
+        "an explicit discriminative stimulus signaling the change.\n"
+    )
     lines.append("**Key claims:**")
     lines.append(
         "- Choice proportion shifted significantly at hidden phase boundaries "
@@ -89,6 +107,15 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
 
     # ── 3.4 Perturbation Sensitivity ────────────────────────────────────────
     lines.append("## 3.4 Perturbation Sensitivity\n")
+    lines.append(
+        "> **For behavior analysts:** Perturbation analysis is conceptually "
+        "similar to a probe trial or brief schedule change — a momentary "
+        "alteration in contingencies used to test how tightly behavior "
+        "tracks the environment. Here, brief bonus pulses test whether "
+        "participants detect and respond to transient reinforcement changes "
+        "that last only seconds, probing sensitivity at timescales far "
+        "shorter than typical condition changes.\n"
+    )
     lines.append("**Key claims:**")
     lines.append(
         "- Brief bonus pulses (3 s) during Phase 4 produced measurable "
@@ -103,6 +130,14 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
 
     # ── 3.5 Strategy Variation ──────────────────────────────────────────────
     lines.append("## 3.5 Strategy Variation Across Participants\n")
+    lines.append(
+        "> **For behavior analysts:** Individual differences in steady-state "
+        "performance are well-documented (e.g., undermatching vs. "
+        "overmatching). Here, individual differences are characterized in "
+        "terms of *dynamic* strategy — not just where behavior settles, but "
+        "how it moves through the choice space over time (e.g., high vs. "
+        "low switching, fast vs. slow adaptation).\n"
+    )
     lines.append("**Key claims:**")
     lines.append(
         "- Participants differed substantially in switch rate, run length, "
@@ -125,6 +160,14 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
 
     # ── 3.6 Model-Based Analysis ────────────────────────────────────────────
     lines.append("## 3.6 Model-Based Analysis\n")
+    lines.append(
+        "> **For behavior analysts:** The matching law describes *what* "
+        "behavior looks like at equilibrium (proportional allocation tracks "
+        "proportional reinforcement). RL models describe *how* that "
+        "allocation is produced on a choice-by-choice basis — the process "
+        "that generates matching (or deviations from it). Comparing models "
+        "asks which updating rule best explains the observed trajectory.\n"
+    )
     lines.append("**Key claims:**")
     if best_model:
         lines.append(
@@ -142,6 +185,170 @@ def generate_manuscript_outline(metrics_df: pd.DataFrame,
     lines.append(
         "\n**Evidence:** Figure 7 (model comparison), Table 5 (model fits), "
         "Supplementary Figure (observed vs. simulated).\n"
+    )
+
+    # ── 3.7 Recurrence Quantification Analysis ─────────────────────────────
+    lines.append("## 3.7 Recurrence Quantification Analysis (RQA)\n")
+    lines.append(
+        "> **For behavior analysts:** Recurrence quantification analysis "
+        "measures how often a behavioral trajectory revisits previous states "
+        "— analogous to asking whether a participant's response pattern at "
+        "minute 4 resembles their pattern at minute 1. It reveals whether "
+        "behavior is truly variable, cyclically recurring, or drifting — "
+        "distinctions that session-wide response rates collapse into a "
+        "single number.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- Choice trajectories exhibit significant recurrence structure, "
+        "indicating that behavioral states are revisited rather than "
+        "randomly generated."
+    )
+    lines.append(
+        "- Determinism (DET) values above chance suggest that revisitations "
+        "occur in predictable sequences — participants follow repeating "
+        "behavioral motifs."
+    )
+    lines.append(
+        "\n**Evidence:** Recurrence plots (dynamical analysis figures).\n"
+    )
+
+    # ── 3.8 Fractal Scaling / DFA ────────────────────────────────────────
+    lines.append("## 3.8 Fractal Scaling Analysis (DFA)\n")
+    lines.append(
+        "> **For behavior analysts:** Detrended fluctuation analysis reveals "
+        "whether choice sequences exhibit long-range temporal correlations "
+        "— whether a response 50 clicks ago still influences the current "
+        "choice — going beyond the local contingency analysis typical of "
+        "steady-state designs. An exponent near 0.5 means choices are "
+        "uncorrelated (like coin flips); near 1.0 means behavior is "
+        "organized across many timescales simultaneously, a signature of "
+        "adaptive complexity.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- DFA exponents were significantly different from 0.5 (random), "
+        "indicating temporal organization in the choice sequence beyond "
+        "local reinforcement tracking."
+    )
+    lines.append(
+        "- Scaling exponents varied across phases, suggesting that different "
+        "reinforcement environments elicit different temporal correlation "
+        "structures."
+    )
+    lines.append(
+        "\n**Evidence:** Log-log scaling plots, DFA exponent distributions "
+        "(fractal analysis figures).\n"
+    )
+
+    # ── 3.9 Sample Entropy ───────────────────────────────────────────────
+    lines.append("## 3.9 Sample Entropy\n")
+    lines.append(
+        "> **For behavior analysts:** Sample entropy quantifies the "
+        "unpredictability of the choice sequence — how surprising each "
+        "response is given the recent pattern. This is distinct from "
+        "response variability per se: a participant could have high "
+        "variability (many switches) but low entropy (if the switching "
+        "pattern itself is predictable, e.g., strict alternation). "
+        "Entropy separates stereotypy from structured variability.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- Choice sequences showed intermediate entropy, consistent with "
+        "structured variability rather than either rigid stereotypy or "
+        "random responding."
+    )
+    lines.append(
+        "- Entropy varied across participants and phases, tracking "
+        "differences in behavioral organization."
+    )
+    lines.append(
+        "\n**Evidence:** Entropy distributions (fractal analysis figures).\n"
+    )
+
+    # ── 3.10 Change-Point Detection ──────────────────────────────────────
+    lines.append("## 3.10 Change-Point Detection (BOCPD)\n")
+    lines.append(
+        "> **For behavior analysts:** Bayesian online change-point detection "
+        "identifies moments when the statistical properties of the choice "
+        "sequence shift abruptly — a data-driven method for detecting when "
+        "behavior reorganizes. Unlike steady-state designs where condition "
+        "changes are signaled by the experimenter, BOCPD asks whether the "
+        "behavioral stream itself contains detectable signatures of hidden "
+        "contingency shifts, analogous to detecting unsignaled schedule "
+        "changes from the cumulative record alone.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- Algorithmically detected change points aligned with known hidden "
+        "phase boundaries, indicating that participants' behavior "
+        "reorganized in response to unannounced contingency changes."
+    )
+    lines.append(
+        "- Additional change points not aligned with phase boundaries may "
+        "reflect spontaneous strategy shifts or local reinforcement "
+        "fluctuations."
+    )
+    lines.append(
+        "\n**Evidence:** Run-length posteriors, change-point alignment "
+        "plots (changepoint analysis figures).\n"
+    )
+
+    # ── 3.11 Empirical Dynamic Modeling / CCM ────────────────────────────
+    lines.append("## 3.11 Empirical Dynamic Modeling (EDM) and Convergent Cross-Mapping (CCM)\n")
+    lines.append(
+        "> **For behavior analysts:** Convergent cross-mapping tests for "
+        "causal coupling between variables (e.g., does reward history "
+        "causally drive choice allocation?) using attractor reconstruction "
+        "rather than traditional correlation. Correlations between "
+        "reinforcement and response rate are well-documented in behavior "
+        "analysis, but correlation alone cannot establish directionality in "
+        "coupled systems where behavior and reinforcement mutually influence "
+        "each other. CCM can detect directional causal influence even in "
+        "these bidirectional systems.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- Simplex projection skill above chance indicates deterministic "
+        "structure in the choice time series — behavior is not simply "
+        "stochastic noise around a mean."
+    )
+    lines.append(
+        "- CCM convergence indicates directional causal coupling between "
+        "reward history and choice allocation, going beyond the "
+        "correlational evidence that matching-law analyses provide."
+    )
+    lines.append(
+        "\n**Evidence:** Simplex projections, CCM convergence plots "
+        "(dynamical analysis figures).\n"
+    )
+
+    # ── 3.12 Hidden Markov Models ────────────────────────────────────────
+    lines.append("## 3.12 Hidden Markov Models (HMM)\n")
+    lines.append(
+        "> **For behavior analysts:** HMMs identify discrete latent "
+        "behavioral states that participants transition between during the "
+        "session — for example, an 'exploring' state with frequent switching "
+        "vs. an 'exploiting' state with strong preference for one option. "
+        "This is conceptually similar to identifying behavioral modes like "
+        "ratio-run vs. post-reinforcement pause, but HMMs discover these "
+        "modes from the data rather than requiring the researcher to define "
+        "them in advance.\n"
+    )
+    lines.append("**Key claims:**")
+    lines.append(
+        "- Model comparison favored a discrete number of latent states, "
+        "suggesting that behavioral trajectories are organized around "
+        "qualitatively distinct response modes."
+    )
+    lines.append(
+        "- State transition dynamics reflected sensitivity to environmental "
+        "changes, with transitions between states clustering near phase "
+        "boundaries."
+    )
+    lines.append(
+        "\n**Evidence:** State sequence plots, transition matrices "
+        "(HMM figures).\n"
     )
 
     # ── Statistics index ────────────────────────────────────────────────────

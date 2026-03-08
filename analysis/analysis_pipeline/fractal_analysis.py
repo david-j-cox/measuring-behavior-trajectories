@@ -83,6 +83,11 @@ def _compute_dfa_all(events_df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def compute_dfa(signal, min_window=4, max_window=None):
+    """Public entry point for DFA computation. See _compute_dfa."""
+    return _compute_dfa(signal, min_window=min_window, max_window=max_window)
+
+
 def _compute_dfa(signal, min_window=4, max_window=None):
     """
     Compute DFA exponent (alpha) for a binary choice signal.
