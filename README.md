@@ -387,17 +387,81 @@ https://your-host.com/?PROLIFIC_PID={{%PROLIFIC_PID%}}
 
 The ID will be pre-filled on the Prolific ID screen. To add a completion redirect, add logic at the end of `finishExperiment()` in `main.js`.
 
-## Intended Analyses
+## Analysis Pipeline
 
-The data structure supports:
+A complete Python analysis pipeline lives in `analysis/`. It pulls data directly from Firestore and runs a 14-step analysis sequence.
 
-- **Choice allocation trajectories** — Proportion of A vs. B choices over time, windowed or cumulative
-- **Adaptation lag** — How quickly behavior shifts after hidden contingency changes at phase boundaries
-- **Switching dynamics** — Switch rates, run-length distributions, time-to-switch distributions
-- **Path dependence and hysteresis** — Whether behavior in Phase 3 depends on Phase 2 history
-- **Trial-by-trial model fitting** — Reinforcement learning, melioration, matching law, or nonlinear dynamical models
-- **Inter-click interval analysis** — Response pacing, burst patterns, post-reward acceleration
-- **Bonus pulse detection** — Whether Phase 4 pulses produce detectable behavioral shifts
+### Setup
+
+```bash
+cd analysis
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Running
+
+```bash
+# Full pipeline
+python run_analysis.py --config config.yaml
+
+# Specific steps only
+python run_analysis.py --steps validate transform metrics plots phase dynamical fractal individual_differences report
+
+# Skip plots
+python run_analysis.py --no-plots
+```
+
+### Pipeline Steps
+
+| Step | Name | Description |
+|------|------|-------------|
+| 1 | Load | Pull events and metadata from Firestore |
+| 2 | Validate | Check data integrity, flag/exclude bad sessions |
+| 3 | Transform | Compute derived variables (rolling proportions, local rates, etc.) |
+| 4 | Metrics | Session-level summary statistics |
+| 5 | Plots | Individual session dashboards + group summary figures |
+| 6 | Phase analysis | Pre/post transition tests, adaptation lags, hysteresis |
+| 7 | Pulse analysis | Perturbation-triggered averages for Phase 4 bonus pulses |
+| 8 | Dynamical analysis | State space, autocorrelation, RQA, EDM simplex, CCM, S-Map |
+| 9 | Changepoint detection | Bayesian Online Change Point Detection (BOCPD) |
+| 10 | Fractal analysis | Detrended Fluctuation Analysis (DFA), sample entropy |
+| 11 | Model fitting | Baseline, RL, matching law, and HMM models |
+| 12 | Individual differences | PCA + GMM clustering of behavioral phenotypes |
+| 13 | Save | Export processed event data |
+| 14 | Report | Generate HTML report with all figures and interpretations |
+
+### Output Structure
+
+```
+analysis/outputs/
+  figures/
+    individual/           Per-session dashboards
+    group/                Group summary plots
+    phase/                Phase transition analysis
+    pulse/                Perturbation-triggered averages
+    dynamical/            State space, recurrence, EDM, CCM, S-Map
+    changepoint/          BOCPD results
+    fractal/              DFA and entropy plots
+    individual_differences/ PCA biplot, cluster profiles, dendrogram
+  tables/
+    session_metrics.csv
+    model_comparison.csv
+    cluster_assignments.csv
+    cluster_profiles.csv
+    ...
+  reports/
+    analysis_report.html  Complete analysis report
+```
+
+### Key Dependencies
+
+- `pandas`, `numpy`, `scipy` — Data manipulation and statistics
+- `matplotlib`, `seaborn` — Plotting
+- `scikit-learn` — PCA, GMM clustering
+- `pyEDM` — Empirical Dynamical Modeling (simplex projection, CCM, S-Map)
+- `firebase-admin` — Firestore data access
 
 ## Optional Extensions (Not Yet Implemented)
 
