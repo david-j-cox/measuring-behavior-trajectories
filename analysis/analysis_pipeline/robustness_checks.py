@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 
 from analysis_pipeline.fractal_analysis import compute_dfa
-from analysis_pipeline.changepoint_analysis import bocpd_gaussian
 
 
 def run_robustness_checks(events_df: pd.DataFrame, config: dict,
@@ -18,7 +17,6 @@ def run_robustness_checks(events_df: pd.DataFrame, config: dict,
     Checks:
       1. Rolling window sensitivity (DFA alpha, mean autocorrelation)
       2. DFA min-window range sensitivity
-      3. BOCPD hazard rate sensitivity (# changepoints, boundary alignment)
 
     Returns a dict with the full results and saves summary CSV + figure.
     """
@@ -43,12 +41,6 @@ def run_robustness_checks(events_df: pd.DataFrame, config: dict,
     results["dfa_window"] = dfa_results
     summary_rows.extend(dfa_rows)
 
-    # ---- 3. BOCPD hazard rate sensitivity ----
-    print("  [3/3] BOCPD hazard rate sensitivity ...")
-    bocpd_results, bocpd_rows = _bocpd_hazard_sensitivity(events_df, config)
-    results["bocpd_hazard"] = bocpd_results
-    summary_rows.extend(bocpd_rows)
-
     # ---- Save summary CSV ----
     summary_df = pd.DataFrame(summary_rows)
     summary_df.to_csv(
@@ -57,8 +49,7 @@ def run_robustness_checks(events_df: pd.DataFrame, config: dict,
     results["summary"] = summary_df
 
     # ---- Generate multi-panel figure ----
-    _plot_robustness(rw_results, dfa_results, bocpd_results, config,
-                     fig_dir, fmt)
+    _plot_robustness(rw_results, dfa_results, config, fig_dir, fmt)
 
     return results
 
@@ -228,127 +219,15 @@ def _dfa_window_sensitivity(events_df, config):
 
 
 # ====================================================================
-# 3. BOCPD hazard rate sensitivity
-# ====================================================================
-
-def _bocpd_hazard_sensitivity(events_df, config):
-    """Run BOCPD with different hazard rates, count changepoints,
-    and measure alignment with true phase boundaries."""
-    hazard_rates = [1/50, 1/100, 1/200, 1/300]
-    default_hazard = 1/100
-    phase_boundaries_s = [p["start_ms"] / 1000
-                          for p in config.get("phase_boundaries", [])[1:]]
-
-    records = {}  # hazard -> DataFrame of per-session results
-
-    for hz in hazard_rates:
-        session_metrics = []
-        for sid, sdf in events_df.groupby("session_id"):
-            sdf = sdf.sort_values("timestamp_ms")
-            if "rolling_choice_prop_a_clicks" not in sdf.columns:
-                continue
-
-            signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
-            times_ms = sdf.loc[sdf["rolling_choice_prop_a_clicks"].notna(),
-                               "timestamp_ms"].values
-
-            if len(signal) < 30:
-                continue
-
-            # Run BOCPD
-            cp_prob, run_lengths = bocpd_gaussian(signal, hazard_rate=hz)
-
-            # Find changepoints (same logic as _detect_changepoints_all)
-            warmup = min(20, len(signal) // 10)
-            threshold = 0.3
-            cp_indices = np.where(
-                (cp_prob > threshold) & (np.arange(len(cp_prob)) >= warmup)
-            )[0]
-
-            # Merge nearby changepoints (within 20 clicks)
-            if len(cp_indices) > 0:
-                merged = [cp_indices[0]]
-                for idx in cp_indices[1:]:
-                    if idx - merged[-1] > 20:
-                        merged.append(idx)
-                    elif cp_prob[idx] > cp_prob[merged[-1]]:
-                        merged[-1] = idx
-                cp_indices = np.array(merged)
-
-            n_cps = len(cp_indices)
-
-            # Compute alignment with boundaries
-            mean_alignment = np.nan
-            if n_cps > 0 and phase_boundaries_s:
-                cp_times_s = times_ms[cp_indices] / 1000
-                min_dists = []
-                for boundary_s in phase_boundaries_s:
-                    dists = np.abs(cp_times_s - boundary_s)
-                    if len(dists) > 0:
-                        min_dists.append(np.min(dists))
-                mean_alignment = np.mean(min_dists) if min_dists else np.nan
-
-            session_metrics.append({
-                "session_id": sid,
-                "n_changepoints": n_cps,
-                "mean_boundary_distance_s": mean_alignment,
-            })
-
-        records[hz] = pd.DataFrame(session_metrics)
-
-    # Summary rows
-    summary_rows = []
-    default_df = records.get(default_hazard, pd.DataFrame())
-
-    for hz, df in records.items():
-        if len(df) == 0:
-            continue
-
-        corr_n = np.nan
-        if len(default_df) > 0 and hz != default_hazard:
-            merged = df.merge(default_df, on="session_id",
-                              suffixes=("", "_default"))
-            valid = merged.dropna(
-                subset=["n_changepoints", "n_changepoints_default"])
-            if len(valid) >= 3:
-                corr_n = np.corrcoef(valid["n_changepoints"],
-                                     valid["n_changepoints_default"])[0, 1]
-        elif hz == default_hazard:
-            corr_n = 1.0
-
-        summary_rows.append({
-            "analysis": "bocpd_hazard",
-            "parameter": "hazard_rate",
-            "value": hz,
-            "metric": "n_changepoints",
-            "mean": df["n_changepoints"].mean(),
-            "sd": df["n_changepoints"].std(),
-            "correlation_with_default": corr_n,
-        })
-        summary_rows.append({
-            "analysis": "bocpd_hazard",
-            "parameter": "hazard_rate",
-            "value": hz,
-            "metric": "mean_boundary_distance_s",
-            "mean": df["mean_boundary_distance_s"].mean(),
-            "sd": df["mean_boundary_distance_s"].std(),
-            "correlation_with_default": np.nan,
-        })
-
-    return records, summary_rows
-
-
-# ====================================================================
 # Plot
 # ====================================================================
 
-def _plot_robustness(rw_results, dfa_results, bocpd_results, config,
-                     fig_dir, fmt):
-    """Generate a 2x2 multi-panel robustness figure."""
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+def _plot_robustness(rw_results, dfa_results, config, fig_dir, fmt):
+    """Generate a 1x2 multi-panel robustness figure."""
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     # ---- Panel 1: DFA alpha vs rolling window size ----
-    ax = axes[0, 0]
+    ax = axes[0]
     windows = sorted(rw_results.keys())
     means, sds = [], []
     for w in windows:
@@ -369,7 +248,7 @@ def _plot_robustness(rw_results, dfa_results, bocpd_results, config,
     ax.legend(fontsize=8)
 
     # ---- Panel 2: DFA alpha correlation across min-window settings ----
-    ax = axes[0, 1]
+    ax = axes[1]
     dfa_records = dfa_results["records"]
     pair_corrs = dfa_results["pair_correlations"]
     min_windows = sorted(dfa_records.keys())
@@ -401,47 +280,6 @@ def _plot_robustness(rw_results, dfa_results, bocpd_results, config,
                         fontsize=9, color="black" if val > 0.4 else "white")
 
     fig.colorbar(im, ax=ax, shrink=0.8)
-
-    # ---- Panel 3: Number of changepoints vs hazard rate ----
-    ax = axes[1, 0]
-    hazard_rates = sorted(bocpd_results.keys())
-    cp_means, cp_sds = [], []
-    for hz in hazard_rates:
-        df = bocpd_results[hz]
-        vals = df["n_changepoints"].dropna()
-        cp_means.append(vals.mean() if len(vals) > 0 else np.nan)
-        cp_sds.append(vals.std() if len(vals) > 0 else np.nan)
-    cp_means, cp_sds = np.array(cp_means), np.array(cp_sds)
-
-    # Use 1/hazard_rate for x-axis (expected run length)
-    expected_run = [1/h for h in hazard_rates]
-    ax.errorbar(expected_run, cp_means, yerr=cp_sds, fmt="o-",
-                color="darkred", capsize=4, linewidth=1.5, markersize=6)
-    ax.axvline(100, color="red", linestyle="--", alpha=0.5,
-               label="Default (1/100)")
-    ax.set_xlabel("Expected Run Length (1/hazard)")
-    ax.set_ylabel("Detected Changepoints")
-    ax.set_title("Changepoints vs Hazard Rate")
-    ax.legend(fontsize=8)
-
-    # ---- Panel 4: Boundary alignment vs hazard rate ----
-    ax = axes[1, 1]
-    align_means, align_sds = [], []
-    for hz in hazard_rates:
-        df = bocpd_results[hz]
-        vals = df["mean_boundary_distance_s"].dropna()
-        align_means.append(vals.mean() if len(vals) > 0 else np.nan)
-        align_sds.append(vals.std() if len(vals) > 0 else np.nan)
-    align_means, align_sds = np.array(align_means), np.array(align_sds)
-
-    ax.errorbar(expected_run, align_means, yerr=align_sds, fmt="s-",
-                color="teal", capsize=4, linewidth=1.5, markersize=6)
-    ax.axvline(100, color="red", linestyle="--", alpha=0.5,
-               label="Default (1/100)")
-    ax.set_xlabel("Expected Run Length (1/hazard)")
-    ax.set_ylabel("Mean Distance to Nearest Boundary (s)")
-    ax.set_title("Changepoint-Boundary Alignment vs Hazard Rate")
-    ax.legend(fontsize=8)
 
     plt.tight_layout()
     fig.savefig(os.path.join(fig_dir, f"robustness_checks.{fmt}"),

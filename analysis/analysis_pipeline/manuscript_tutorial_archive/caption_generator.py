@@ -100,6 +100,91 @@ def generate_all_captions(metrics_df: pd.DataFrame, analysis_results: dict,
         "outperform static heuristics."
     )
 
+    # ── Dynamical analysis figure captions ──────────────────────────────────
+
+    captions["figure8_rqa"] = (
+        "**Figure 8. Recurrence quantification analysis.** "
+        "(A) Example recurrence plot for a representative session, showing "
+        "the pattern of state revisitations across the choice sequence. "
+        "(B) Distributions of RQA metrics across sessions: determinism, "
+        "recurrence rate, and laminarity. High determinism indicates that "
+        "revisitations occur in predictable sequences rather than at random. "
+        f"(C) Determinism by experimental phase (N = {n})."
+    )
+
+    captions["figure9_dfa"] = (
+        "**Figure 9. Detrended fluctuation analysis.** "
+        "(A) Distribution of DFA exponents (alpha) across sessions. "
+        "Dashed red line marks alpha = 0.5 (uncorrelated random process); "
+        "dashed orange line marks alpha = 1.0 (1/f noise). "
+        "The median exponent falls between these benchmarks, indicating "
+        "persistent long-range temporal correlations in the choice sequence. "
+        f"(B) DFA exponents by experimental phase (N = {n}). "
+        "Values above 2.0 are clipped as unreliable estimates from short series."
+    )
+
+    captions["figure10_entropy"] = (
+        "**Figure 10. Sample entropy.** "
+        "(A) Distribution of sample entropy values across sessions. "
+        "Higher values indicate less predictable choice sequences. "
+        "(B) Sample entropy by experimental phase. Phase 4 (scarcity + pulses) "
+        f"shows elevated entropy relative to the asymmetric phases (N = {n})."
+    )
+
+    captions["figure11_ccm"] = (
+        "**Figure 11. Convergent cross-mapping.** "
+        "(A) Group-average cross-map skill (rho) as a function of library size "
+        "for the reward-to-choice and choice-to-reward directions. "
+        "Increasing rho with library size indicates causal coupling. "
+        "(B) Per-session asymmetry: each point is one session, plotted by "
+        "cross-map skill in each direction. Points above the diagonal indicate "
+        f"stronger reward-to-choice than choice-to-reward causation (N = {n})."
+    )
+
+    captions["figure12_smap"] = (
+        "**Figure 12. S-Map nonlinearity analysis.** "
+        "(A) Linear (simplex) vs. nonlinear (S-Map) prediction skill for each "
+        "session. Points above the diagonal indicate state-dependent dynamics. "
+        "(B) Distribution of nonlinearity scores (delta-rho = S-Map rho minus "
+        f"simplex rho). Positive values indicate nonlinear dynamics (N = {n})."
+    )
+
+    captions["figure13_hmm"] = (
+        "**Figure 13. Hidden Markov model analysis.** "
+        "(A) Example session with choice trajectory colored by HMM-assigned "
+        "latent state. Vertical dashed lines mark hidden phase boundaries. "
+        "(B) Mean state occupancy by experimental phase, aggregated across "
+        f"sessions (N = {n}). State transitions cluster near phase boundaries, "
+        "suggesting that HMM states capture environmentally driven behavioral modes."
+    )
+
+    captions["figure14_phenotypes"] = (
+        "**Figure 14. Behavioral phenotypes.** "
+        "(A) PCA biplot of session-level behavioral and dynamical features, "
+        "colored by GMM cluster assignment. Feature loading vectors (red arrows) "
+        "show how each metric contributes to the principal components. "
+        "(B) Cluster profile heatmap showing mean z-scored feature values for "
+        f"each cluster (N = {n})."
+    )
+
+    captions["figure15_null_comparison"] = (
+        "**Figure 15. Null model comparison.** "
+        "Dynamical metrics (DFA alpha, sample entropy, recurrence rate, "
+        "determinism, laminarity, trapping time) computed on real behavioral data "
+        "vs. simulated data from three null models: random choice, matching-law "
+        f"allocation, and win-stay/lose-shift. Error bars show +/- 1 SEM (N = {n}). "
+        "Differences between real and null distributions indicate dynamical "
+        "structure in behavior that simple models cannot reproduce."
+    )
+
+    captions["figure16_robustness"] = (
+        "**Figure 16. Sensitivity and robustness checks.** "
+        "(A) Mean DFA exponent as a function of rolling window size, showing "
+        "that the qualitative conclusion (alpha > 0.5) is robust across window "
+        "sizes. (B) Cross-correlation matrix of DFA exponents computed at "
+        "different minimum window sizes, confirming high rank-order stability."
+    )
+
     # ── Table captions ──────────────────────────────────────────────────────
 
     captions["table1_session_summary"] = (
@@ -127,11 +212,32 @@ def generate_all_captions(metrics_df: pd.DataFrame, analysis_results: dict,
         "bonus pulse onset during Phase 4."
     )
 
-    captions["table5_model_fits"] = (
-        "**Table 5. Model fit statistics.** "
+    captions["table5_matching_law"] = (
+        "**Table 5. Generalized matching law (Baum, 1974) parameter estimates.** "
+        "Sensitivity (*s*), bias (*b*), and variance explained (R\u00b2) per "
+        "session, computed via log-ratio regression on non-overlapping bins "
+        "of local reinforcement and response ratios. "
+        "Classification: undermatching (*s* < 0.9), strict matching "
+        "(0.9 \u2264 *s* \u2264 1.1), overmatching (*s* > 1.1). Summary row "
+        "reports M (SD) across sessions."
+    )
+
+    captions["table6_model_fits"] = (
+        "**Table 6. Trial-level model fit statistics.** "
         "Log-likelihood, AIC, BIC, and predictive accuracy for each "
-        "behavioral model, averaged across sessions. Lower AIC/BIC "
-        "indicates better fit after penalizing for model complexity."
+        "trial-level behavioral model, averaged across sessions. Lower AIC/BIC "
+        "indicates better fit after penalizing for model complexity. "
+        "Matching law models are reported separately in Table 5 because "
+        "they use session-level log-ratio regression rather than "
+        "trial-level likelihoods."
+    )
+
+    captions["table7_dynamical_summary"] = (
+        "**Table 7. Dynamical analysis summary.** "
+        f"Mean, standard deviation, median, and range for each dynamical metric "
+        f"across sessions (N = {n}). RQA = recurrence quantification analysis; "
+        "DFA = detrended fluctuation analysis; EDM = empirical dynamic modeling; "
+        "S-Map = state-dependent mapping."
     )
 
     # ── Write to files ──────────────────────────────────────────────────────

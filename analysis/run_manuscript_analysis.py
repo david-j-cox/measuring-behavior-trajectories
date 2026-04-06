@@ -13,10 +13,12 @@ Usage:
 """
 
 import argparse
+import gc
 import os
 import sys
 import time
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from analysis_pipeline.utils import load_config, ensure_dirs
@@ -130,35 +132,92 @@ def main():
     phase_results = run_phase_analysis(events_df, metrics_df, config, output_dir)
     analysis_results.update(phase_results)
 
+    # Dynamical analysis (RQA, state space, autocorrelation, EDM, CCM, S-Map)
+    print("\n--- Dynamical analysis ---")
+    from analysis_pipeline.dynamical_analysis import run_dynamical_analysis
+    dyn_results = run_dynamical_analysis(events_df, config, output_dir)
+    analysis_results.update(dyn_results)
+    plt.close("all")
+    gc.collect()
+
+    # Fractal analysis (DFA, sample entropy)
+    print("\n--- Fractal analysis ---")
+    from analysis_pipeline.fractal_analysis import run_fractal_analysis
+    fractal_results = run_fractal_analysis(events_df, config, output_dir)
+    analysis_results.update(fractal_results)
+    plt.close("all")
+    gc.collect()
+
+    # HMM fitting
+    if config.get("run_models", True) and not args.no_models:
+        print("\n--- HMM models ---")
+        try:
+            from analysis_pipeline.models.hmm_models import (
+                fit_hmm_models, summarize_hmm_states,
+            )
+            hmm_results, hmm_state_sequences = fit_hmm_models(
+                events_df, config, output_dir
+            )
+            # Store per-click state sequences for manuscript figures
+            if hmm_state_sequences:
+                analysis_results["hmm_state_sequences"] = hmm_state_sequences
+            hmm_summary = summarize_hmm_states(hmm_state_sequences, output_dir)
+            if len(hmm_summary) > 0:
+                analysis_results["hmm_state_summary"] = hmm_summary
+            if len(hmm_results) > 0:
+                analysis_results["hmm"] = hmm_results
+        except Exception as e:
+            print(f"  HMM fitting failed: {e}")
+
+    # Individual differences (PCA + GMM clustering)
+    print("\n--- Individual differences ---")
+    from analysis_pipeline.individual_differences import run_individual_differences
+    id_results = run_individual_differences(
+        metrics_df, analysis_results, config, output_dir
+    )
+    analysis_results["individual_differences"] = id_results
+
+    # Null comparison
+    print("\n--- Null comparison ---")
+    from analysis_pipeline.null_comparison import run_null_comparison
+    null_results = run_null_comparison(events_df, config, output_dir)
+    analysis_results.update(null_results)
+
+    # Robustness checks
+    print("\n--- Robustness checks ---")
+    from analysis_pipeline.robustness_checks import run_robustness_checks
+    robustness_results = run_robustness_checks(events_df, config, output_dir)
+    analysis_results["robustness"] = robustness_results
+
     # ════════════════════════════════════════════════════════════════════════
     # Step 3: Manuscript outputs
     # ════════════════════════════════════════════════════════════════════════
 
     if not args.tables_only:
         print("\n--- Generating manuscript figures ---")
-        from analysis_pipeline.manuscript.figure_generation import generate_all_figures
+        from analysis_pipeline.manuscript_tutorial_archive.figure_generation import generate_all_figures
         generate_all_figures(events_df, metrics_df, analysis_results, config, output_dir)
 
     if not args.figures_only:
         print("\n--- Generating manuscript tables ---")
-        from analysis_pipeline.manuscript.table_generation import generate_all_tables
+        from analysis_pipeline.manuscript_tutorial_archive.table_generation import generate_all_tables
         generate_all_tables(events_df, metrics_df, analysis_results, config, output_dir)
 
     if not args.figures_only and not args.tables_only:
         print("\n--- Generating captions ---")
-        from analysis_pipeline.manuscript.caption_generator import generate_all_captions
+        from analysis_pipeline.manuscript_tutorial_archive.caption_generator import generate_all_captions
         generate_all_captions(metrics_df, analysis_results, config, output_dir)
 
         print("\n--- Generating results summary ---")
-        from analysis_pipeline.manuscript.results_summary import generate_results_summary
+        from analysis_pipeline.manuscript_tutorial_archive.results_summary import generate_results_summary
         generate_results_summary(events_df, metrics_df, analysis_results, config, output_dir)
 
         print("\n--- Generating manuscript outline ---")
-        from analysis_pipeline.manuscript.manuscript_outline import generate_manuscript_outline
+        from analysis_pipeline.manuscript_tutorial_archive.manuscript_outline import generate_manuscript_outline
         generate_manuscript_outline(metrics_df, analysis_results, config, output_dir)
 
         print("\n--- Assembling export package ---")
-        from analysis_pipeline.manuscript.export_package import export_manuscript_package
+        from analysis_pipeline.manuscript_tutorial_archive.export_package import export_manuscript_package
         export_manuscript_package(events_df, metrics_df, analysis_results, config, output_dir)
 
     elapsed = time.time() - t0

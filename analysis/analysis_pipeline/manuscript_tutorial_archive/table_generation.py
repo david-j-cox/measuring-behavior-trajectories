@@ -20,7 +20,9 @@ def generate_all_tables(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         events_df, metrics_df, config
     )
     tables["table4_pulse_response"] = _table4_pulse_response(events_df, config)
-    tables["table5_model_fits"] = _table5_model_fits(analysis_results)
+    tables["table5_matching_law"] = _table5_matching_law(analysis_results)
+    tables["table6_model_fits"] = _table6_model_fits(analysis_results)
+    tables["table7_dynamical_summary"] = _table7_dynamical_summary(analysis_results)
 
     # Glossary table is standalone (no data dependencies)
     glossary_df = generate_glossary_table(os.path.join(output_dir, "manuscript"))
@@ -62,10 +64,17 @@ def _table1_session_summary(metrics_df: pd.DataFrame) -> pd.DataFrame:
     for col, label in stat_cols:
         if col in metrics_df.columns:
             vals = metrics_df[col].dropna()
-            rows.append({
-                "Measure": label,
-                "Value": f"{vals.mean():.2f} ({vals.std():.2f})",
-            })
+            # Use more decimal places for entropy to avoid hiding variation
+            if col == "choice_entropy":
+                rows.append({
+                    "Measure": label,
+                    "Value": f"{vals.mean():.4f} ({vals.std():.4f})",
+                })
+            else:
+                rows.append({
+                    "Measure": label,
+                    "Value": f"{vals.mean():.2f} ({vals.std():.2f})",
+                })
 
     return pd.DataFrame(rows)
 
@@ -263,13 +272,82 @@ def _table4_pulse_response(events_df: pd.DataFrame,
 
 # ── Table 5 ─────────────────────────────────────────────────────────────────
 
-def _table5_model_fits(analysis_results: dict) -> pd.DataFrame:
-    """Model comparison summary table."""
+def _table5_matching_law(analysis_results: dict) -> pd.DataFrame:
+    """Generalized matching law (Baum, 1974) parameter estimates per session.
+
+    Reports sensitivity (s), bias (b), R², n bins, and classification
+    (undermatching / strict matching / overmatching).
+    """
     mc = analysis_results.get("model_comparison")
     if mc is None or len(mc) == 0:
         return pd.DataFrame()
 
-    agg = mc.groupby("model").agg(
+    matching_df = mc[mc["model"] == "generalized_matching_law"].copy()
+    if len(matching_df) == 0:
+        return pd.DataFrame()
+
+    def _classify(s):
+        if s < 0.9:
+            return "Undermatching"
+        elif s > 1.1:
+            return "Overmatching"
+        else:
+            return "Strict matching"
+
+    rows = []
+    for _, r in matching_df.iterrows():
+        rows.append({
+            "Session": r["session_id"],
+            "Sensitivity (s)": round(r["sensitivity"], 3),
+            "Bias (b)": round(r["bias"], 3),
+            "R²": round(r["r_squared"], 3),
+            "n bins": int(r["n_bins"]) if pd.notna(r["n_bins"]) else "",
+            "Classification": _classify(r["sensitivity"]),
+        })
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+
+    # Append summary row
+    s_vals = df["Sensitivity (s)"]
+    b_vals = df["Bias (b)"]
+    r2_vals = df["R²"]
+    n_under = (df["Classification"] == "Undermatching").sum()
+    n_strict = (df["Classification"] == "Strict matching").sum()
+    n_over = (df["Classification"] == "Overmatching").sum()
+    summary_row = pd.DataFrame([{
+        "Session": f"Mean (SD), N={len(df)}",
+        "Sensitivity (s)": f"{s_vals.mean():.3f} ({s_vals.std():.3f})",
+        "Bias (b)": f"{b_vals.mean():.3f} ({b_vals.std():.3f})",
+        "R²": f"{r2_vals.mean():.3f} ({r2_vals.std():.3f})",
+        "n bins": "",
+        "Classification": f"{n_under} under / {n_strict} strict / {n_over} over",
+    }])
+    df = pd.concat([df, summary_row], ignore_index=True)
+
+    return df
+
+
+# ── Table 6 ─────────────────────────────────────────────────────────────────
+
+def _table6_model_fits(analysis_results: dict) -> pd.DataFrame:
+    """Trial-level model comparison summary table.
+
+    Matching-law models are excluded from the trial-level BIC comparison
+    because they use log-ratio regression (session-level R²) rather than
+    trial-level likelihoods; including them produces NaN BIC values.
+    """
+    mc = analysis_results.get("model_comparison")
+    if mc is None or len(mc) == 0:
+        return pd.DataFrame()
+
+    # Exclude matching-law models from the trial-level comparison table
+    # (they use a different fitting approach and produce NaN likelihoods)
+    trial_models = mc[mc["model"] != "generalized_matching_law"].copy()
+
+    agg = trial_models.groupby("model").agg(
         mean_nll=("nll", "mean"),
         sd_nll=("nll", "std"),
         mean_aic=("aic", "mean"),
@@ -290,6 +368,94 @@ def _table5_model_fits(analysis_results: dict) -> pd.DataFrame:
             "BIC": f"{r['mean_bic']:.1f} ({r['sd_bic']:.1f})",
             "N sessions": int(r["n_sessions"]),
         })
+
+    return pd.DataFrame(rows)
+
+
+# ── Table 7 ─────────────────────────────────────────────────────────────────
+
+def _table7_dynamical_summary(analysis_results: dict) -> pd.DataFrame:
+    """Summary table of dynamical analysis metrics."""
+    rows = []
+
+    # RQA
+    rqa = analysis_results.get("rqa")
+    if rqa is not None and isinstance(rqa, pd.DataFrame) and len(rqa) > 0:
+        for col, label in [("recurrence_rate", "Recurrence Rate (RQA)"),
+                           ("determinism", "Determinism (RQA)"),
+                           ("laminarity", "Laminarity (RQA)"),
+                           ("trapping_time", "Trapping Time (RQA)")]:
+            if col in rqa.columns:
+                vals = rqa[col].dropna()
+                if len(vals) > 0:
+                    rows.append({
+                        "Metric": label,
+                        "Mean (SD)": f"{vals.mean():.3f} ({vals.std():.3f})",
+                        "Median": f"{vals.median():.3f}",
+                        "Range": f"[{vals.min():.3f}, {vals.max():.3f}]",
+                        "N": len(vals),
+                    })
+
+    # DFA
+    dfa = analysis_results.get("dfa")
+    if dfa is not None and isinstance(dfa, pd.DataFrame) and len(dfa) > 0:
+        full = dfa[dfa["scope"] == "full_session"] if "scope" in dfa.columns else dfa
+        if "dfa_alpha" in full.columns:
+            vals = full["dfa_alpha"].dropna()
+            if len(vals) > 0:
+                rows.append({
+                    "Metric": "DFA Exponent (alpha)",
+                    "Mean (SD)": f"{vals.mean():.3f} ({vals.std():.3f})",
+                    "Median": f"{vals.median():.3f}",
+                    "Range": f"[{vals.min():.3f}, {vals.max():.3f}]",
+                    "N": len(vals),
+                })
+
+    # Sample Entropy
+    se = analysis_results.get("sample_entropy")
+    if se is not None and isinstance(se, pd.DataFrame) and len(se) > 0:
+        full = se[se["scope"] == "full_session"] if "scope" in se.columns else se
+        if "sample_entropy" in full.columns:
+            vals = full["sample_entropy"].dropna()
+            if len(vals) > 0:
+                rows.append({
+                    "Metric": "Sample Entropy",
+                    "Mean (SD)": f"{vals.mean():.3f} ({vals.std():.3f})",
+                    "Median": f"{vals.median():.3f}",
+                    "Range": f"[{vals.min():.3f}, {vals.max():.3f}]",
+                    "N": len(vals),
+                })
+
+    # EDM simplex
+    edm = analysis_results.get("edm_simplex")
+    if edm is not None and isinstance(edm, pd.DataFrame) and len(edm) > 0:
+        if "rho" in edm.columns:
+            vals = edm["rho"].dropna()
+            if len(vals) > 0:
+                rows.append({
+                    "Metric": "Simplex Projection rho (EDM)",
+                    "Mean (SD)": f"{vals.mean():.3f} ({vals.std():.3f})",
+                    "Median": f"{vals.median():.3f}",
+                    "Range": f"[{vals.min():.3f}, {vals.max():.3f}]",
+                    "N": len(vals),
+                })
+
+    # S-Map nonlinearity
+    smap = analysis_results.get("smap")
+    if smap is not None and isinstance(smap, pd.DataFrame) and len(smap) > 0:
+        if "nonlinearity" in smap.columns:
+            vals = smap["nonlinearity"].dropna()
+            if len(vals) > 0:
+                rows.append({
+                    "Metric": "Nonlinearity (S-Map delta-rho)",
+                    "Mean (SD)": f"{vals.mean():.4f} ({vals.std():.4f})",
+                    "Median": f"{vals.median():.4f}",
+                    "Range": f"[{vals.min():.4f}, {vals.max():.4f}]",
+                    "N": len(vals),
+                })
+
+    if not rows:
+        return pd.DataFrame()
 
     return pd.DataFrame(rows)
 
@@ -350,7 +516,7 @@ def generate_glossary_table(output_dir: str) -> pd.DataFrame:
                 "Regime shift / abrupt change in contingency\u2013behavior "
                 "relationship"
             ),
-            "Analysis Method(s)": "Changepoint detection; phase-transition analysis",
+            "Analysis Method(s)": "Phase-transition analysis",
         },
         {
             "Dynamical Systems Term": "Recurrence",
@@ -403,18 +569,6 @@ def generate_glossary_table(output_dir: str) -> pd.DataFrame:
                 "choice sequence"
             ),
             "Analysis Method(s)": "Entropy estimation; fractal analysis",
-        },
-        {
-            "Dynamical Systems Term": "Changepoint",
-            "Definition": (
-                "A point in time at which the statistical properties of a "
-                "time series (mean, variance, or both) shift abruptly."
-            ),
-            "Behavior-Analytic Equivalent/Analog": (
-                "Transition point / the moment behavior shifts to a new "
-                "regime (cf. transition states in steady-state designs)"
-            ),
-            "Analysis Method(s)": "Bayesian Online Changepoint Detection (BOCPD)",
         },
         {
             "Dynamical Systems Term": "Embedding dimension",
@@ -509,6 +663,20 @@ def generate_glossary_table(output_dir: str) -> pd.DataFrame:
                 "in behavior analysis)"
             ),
             "Analysis Method(s)": "Hidden Markov Model fitting; state classification",
+        },
+        {
+            "Dynamical Systems Term": "Logistic regression model",
+            "Definition": (
+                "A statistical model predicting each choice as a weighted "
+                "function of recent reward history and choice history. Unlike "
+                "RL models, it makes no assumptions about value updating; "
+                "unlike matching, it operates at the trial level."
+            ),
+            "Behavior-Analytic Equivalent/Analog": (
+                "Recent-history weighting / predicting current choice from "
+                "a weighted window of recent rewards and responses"
+            ),
+            "Analysis Method(s)": "Model comparison (BIC/AIC)",
         },
         {
             "Dynamical Systems Term": "Matching law",

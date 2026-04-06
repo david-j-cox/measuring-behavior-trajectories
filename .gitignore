@@ -17,3 +17,13 @@ analysis/outputs/
 
 # Firebase service account key
 service-account-key.json
+
+# Manuscript
+manuscript/
+
+# Data and outputs
+analysis/data/
+analysis/pipeline_outputs/
+
+# Reference articles (PDFs)
+articles/

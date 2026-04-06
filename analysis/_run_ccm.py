@@ -21,11 +21,16 @@ if __name__ == '__main__':
     # Pre-compute best_E cache for all sessions
     from analysis_pipeline.dynamical_analysis import _compute_best_E_for_session
     from joblib import Parallel, delayed
+    import gc
     session_ids = events_df["session_id"].unique()
-    best_E_results = Parallel(n_jobs=-1)(
-        delayed(_compute_best_E_for_session)(events_df, sid)
-        for sid in session_ids
-    )
+    best_E_results = []
+    for i in range(0, len(session_ids), 2):
+        batch = session_ids[i:i + 2]
+        best_E_results.extend(Parallel(n_jobs=1)(
+            delayed(_compute_best_E_for_session)(events_df, sid)
+            for sid in batch
+        ))
+        gc.collect()
     best_E_cache = {r[0]: r[1] for r in best_E_results if r is not None}
 
     print("=== Running CCM (section 8) ===")

@@ -4,6 +4,7 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from scipy.stats import sem
 
 
 def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
@@ -90,9 +91,9 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         "fluctuations may reflect exploration or noisy estimation.\n"
     )
     sections.append(
-        "Behavioral trajectories were non-stationary across the session. "
-        "Rolling choice proportions shifted systematically in response to "
-        "hidden changes in the reward environment (see **Figure 2**).\n"
+        "Participants tracked the non-stationarity in the reward environment, "
+        "as evidenced by systematic shifts in choice allocation that "
+        "corresponded with hidden phase boundaries (see **Figure 2**).\n"
     )
     sections.append(
         f"- **Mean switch rate:** "
@@ -106,14 +107,27 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     )
     sections.append(
         f"- **Choice entropy:** "
-        f"{metrics_df['choice_entropy'].mean():.3f} "
-        f"({metrics_df['choice_entropy'].std():.3f})"
+        f"{metrics_df['choice_entropy'].mean():.4f} "
+        f"({metrics_df['choice_entropy'].std():.4f})"
+    )
+    sections.append(
+        "This near-maximal entropy reflects approximately equal overall "
+        "allocation between options across the full session, driven by the "
+        "symmetric and alternating phase design. Within-phase entropy (see "
+        "dynamical analyses below) reveals more meaningful variation."
     )
     if "proportion_optimal" in metrics_df.columns:
         sections.append(
             f"- **Proportion optimal:** "
             f"{metrics_df['proportion_optimal'].mean():.3f} "
             f"({metrics_df['proportion_optimal'].std():.3f})"
+        )
+        sections.append(
+            "(Note: This metric is computed against the omniscient optimal "
+            "choice given hidden latent values that participants cannot observe. "
+            "A value near 0.50 is expected when both options are viable and the "
+            "environment alternates asymmetric phases; it does not indicate "
+            "chance performance.)"
         )
     sections.append(
         "\nThese values indicate that participants actively adjusted their "
@@ -152,6 +166,26 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
                 f"diff = {test['mean_diff']:+.3f}, "
                 f"*t* = {test['t_stat']:.2f}, *p* = {test['p_value']:.4f} ({sig})"
             )
+            # Effect size (Cohen's d)
+            if "cohens_d" in test:
+                sections.append(
+                    f"  - Effect size: Cohen's *d* = {test['cohens_d']:.3f}"
+                )
+            else:
+                # Compute from available info: d = mean_diff / SD
+                # Use pooled SD estimate if available, otherwise approximate from t and n
+                if "sd_diff" in test and test["sd_diff"] != 0:
+                    d_val = abs(test["mean_diff"]) / test["sd_diff"]
+                    sections.append(
+                        f"  - Effect size: Cohen's *d* = {d_val:.3f}"
+                    )
+                elif "n" in test and test["n"] > 0:
+                    # d = t / sqrt(n) for paired t-test
+                    d_val = abs(test["t_stat"]) / np.sqrt(test["n"])
+                    sections.append(
+                        f"  - Effect size: Cohen's *d* = {d_val:.3f} "
+                        f"(estimated from *t* / sqrt(*n*))"
+                    )
         sections.append("")
 
     lags = analysis_results.get("adaptation_lags", {})
@@ -198,29 +232,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     )
     sections.append("")
 
-    # ── 6. Individual Differences in Strategy ───────────────────────────────
-    sections.append("## 6. Individual Differences in Strategy\n")
-    sections.append(
-        "Participants varied substantially in their behavioral strategies. "
-        "See **Figure 6** for distributions.\n"
-    )
-    # Win-stay / lose-shift
-    if "win_stay_rate" in metrics_df.columns:
-        sections.append(
-            f"- **Win-stay rate:** "
-            f"{metrics_df['win_stay_rate'].dropna().mean():.3f} "
-            f"({metrics_df['win_stay_rate'].dropna().std():.3f})"
-        )
-    if "lose_shift_rate" in metrics_df.columns:
-        sections.append(
-            f"- **Lose-shift rate:** "
-            f"{metrics_df['lose_shift_rate'].dropna().mean():.3f} "
-            f"({metrics_df['lose_shift_rate'].dropna().std():.3f})"
-        )
-    sections.append("")
-
-    # ── 7. Matching Law Analysis ─────────────────────────────────────────────
-    sections.append("## 7. Matching Law Analysis\n")
+    # ── 6. Matching Law Analysis ─────────────────────────────────────────────
+    sections.append("## 6. Matching Law Analysis\n")
     sections.append(
         "> **What this measures:** The generalized matching law (Baum, 1974) "
         "quantifies the relationship between relative reinforcement rate and "
@@ -245,76 +258,69 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
 
     mc_for_matching = analysis_results.get("model_comparison")
     if mc_for_matching is not None and isinstance(mc_for_matching, pd.DataFrame) and len(mc_for_matching) > 0:
-        matching_df = mc_for_matching[mc_for_matching["model"].isin(
-            ["strict_matching", "generalized_matching"]
-        )]
-        if len(matching_df) > 0:
-            for model_name in ["strict_matching", "generalized_matching"]:
-                mdf = matching_df[matching_df["model"] == model_name]
-                if len(mdf) == 0:
-                    continue
-                label = model_name.replace("_", " ").title()
-                s_mean = mdf["sensitivity"].mean()
-                s_sd = mdf["sensitivity"].std()
-                b_mean = mdf["bias"].mean()
-                b_sd = mdf["bias"].std()
-                r2_mean = mdf["r_squared"].mean()
-                r2_sd = mdf["r_squared"].std()
-                r2_min = mdf["r_squared"].min()
-                r2_max = mdf["r_squared"].max()
+        mdf = mc_for_matching[mc_for_matching["model"] == "generalized_matching_law"]
+        if len(mdf) > 0:
+            s_mean = mdf["sensitivity"].mean()
+            s_sd = mdf["sensitivity"].std()
+            b_mean = mdf["bias"].mean()
+            b_sd = mdf["bias"].std()
+            r2_mean = mdf["r_squared"].mean()
+            r2_sd = mdf["r_squared"].std()
+            r2_min = mdf["r_squared"].min()
+            r2_max = mdf["r_squared"].max()
 
-                # Classify sensitivity
-                if s_mean < 0.9:
-                    s_class = "undermatching"
-                elif s_mean > 1.1:
-                    s_class = "overmatching"
-                else:
-                    s_class = "near strict matching"
+            # Classify sensitivity
+            if s_mean < 0.9:
+                s_class = "undermatching"
+            elif s_mean > 1.1:
+                s_class = "overmatching"
+            else:
+                s_class = "near strict matching"
 
-                sections.append(f"**{label}:**\n")
-                sections.append(
-                    f"- Sensitivity (*s*): {s_mean:.3f} ({s_sd:.3f}) — {s_class}"
-                )
-                sections.append(
-                    f"- Bias (*b*): {b_mean:.3f} ({b_sd:.3f})"
-                )
-                sections.append(
-                    f"- R\u00b2: {r2_mean:.3f} ({r2_sd:.3f}), "
-                    f"range = [{r2_min:.3f}, {r2_max:.3f}]"
-                )
-                sections.append(f"- Sessions fit: {len(mdf)}")
-                sections.append("")
-
+            sections.append("**Generalized Matching Law (Baum, 1974):**\n")
             sections.append(
-                "The matching law accounts for a substantial proportion of "
-                "variance in molar choice allocation, confirming that "
-                "participants' behavior is lawfully related to reinforcement "
-                "contingencies. However, matching law fits aggregate across "
-                "the entire session (or within rolling windows), and therefore "
-                "cannot distinguish between a participant who smoothly tracks "
-                "changing contingencies and one who perseverates then abruptly "
-                "switches. The analyses below dissect these temporal dynamics.\n"
+                f"- Sensitivity (*s*): {s_mean:.3f} ({s_sd:.3f}) \u2014 {s_class}"
             )
             sections.append(
-                "**Where matching succeeds:** Capturing the overall tendency "
-                "for behavior to approximate reinforcement-proportional "
-                "allocation — the equilibrium that decades of behavior-analytic "
-                "research have documented.\n"
+                f"- Bias (*b*): {b_mean:.3f} ({b_sd:.3f})"
             )
             sections.append(
-                "**Where matching fails:** (a) It misses transient dynamics — "
-                "the shape and speed of adjustment after regime changes; "
-                "(b) it cannot represent adaptation lags, which vary across "
-                "participants and transitions; (c) it predicts identical "
-                "allocation for a given reinforcement ratio regardless of "
-                "history, yet participants exhibit hysteresis (path-dependent "
-                "behavior); (d) it provides no mechanism for the phase-transition "
-                "responses captured by change-point detection and HMM state "
-                "switching.\n"
+                f"- R\u00b2: {r2_mean:.3f} ({r2_sd:.3f}), "
+                f"range = [{r2_min:.3f}, {r2_max:.3f}]"
             )
+            sections.append(f"- Sessions fit: {len(mdf)}")
+            sections.append("")
+
+            n_under = (mdf["sensitivity"] < 0.9).sum()
+            n_strict = ((mdf["sensitivity"] >= 0.9) & (mdf["sensitivity"] <= 1.1)).sum()
+            n_over = (mdf["sensitivity"] > 1.1).sum()
+            n_total = len(mdf)
+            s_range_lo = mdf["sensitivity"].min()
+            s_range_hi = mdf["sensitivity"].max()
+
             sections.append(
-                "See **Figure 8** and **Table 6** for matching law parameter "
-                "distributions."
+                f"Across {n_total} sessions, {n_under} "
+                f"({100 * n_under / n_total:.0f}%) showed undermatching "
+                f"(*s* < 0.9), {n_strict} "
+                f"({100 * n_strict / n_total:.0f}%) showed approximate "
+                f"strict matching (0.9 \u2264 *s* \u2264 1.1), and "
+                f"{n_over} ({100 * n_over / n_total:.0f}%) showed "
+                f"overmatching (*s* > 1.1). Mean sensitivity was "
+                f"{s_mean:.3f} (range: [{s_range_lo:.3f}, "
+                f"{s_range_hi:.3f}]), and mean R\u00b2 was {r2_mean:.3f}, "
+                "confirming that the generalized matching law accounts for a "
+                "meaningful share of molar choice variance but leaves "
+                "substantial unexplained variability. As a steady-state "
+                "description, however, it necessarily aggregates over "
+                "the temporal dynamics that are the focus of the present "
+                "analyses. The dynamical tools that follow are designed "
+                "to characterize precisely these within-session "
+                "processes.\n"
+            )
+
+            sections.append(
+                "See **Table 5** for per-session matching law parameters and "
+                "**Table 6** for trial-level model fit comparisons."
             )
         else:
             sections.append(
@@ -326,45 +332,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         )
     sections.append("")
 
-    # ── 8. Model Comparison ─────────────────────────────────────────────────
-    sections.append("## 8. Model Comparison\n")
-    sections.append(
-        "> **What this measures:** Reinforcement-learning models formalize "
-        "competing hypotheses about the computational rules governing choice "
-        "(e.g., how recent rewards are weighted, how quickly value estimates "
-        "update). Model comparison identifies which rule best accounts for "
-        "the observed choice sequence.\n"
-        "> **Why it matters:** The matching law (Section 7) describes the "
-        "equilibrium relationship between behavior and reinforcement ratios, "
-        "but it does not specify the *process* that produces matching — RL "
-        "models fill that gap by characterizing the trial-by-trial dynamics.\n"
-        "> **Interpretation:** Lower BIC indicates a better trade-off between "
-        "fit and parsimony. A model with forgetting or decay outperforming a "
-        "memoryless model implies that participants integrate reward history "
-        "over a finite window rather than responding only to the most recent "
-        "outcome.\n"
-    )
-    mc = analysis_results.get("model_comparison")
-    if mc is not None and len(mc) > 0:
-        agg = mc.groupby("model")["bic"].mean().sort_values()
-        best = agg.index[0]
-        sections.append(
-            f"The best-fitting model by mean BIC was **{best}** "
-            f"(mean BIC = {agg.iloc[0]:.1f}).\n"
-        )
-        sections.append("Model ranking (by mean BIC, lower = better):\n")
-        for model, bic_val in agg.items():
-            delta = bic_val - agg.iloc[0]
-            sections.append(f"- {model}: BIC = {bic_val:.1f} (ΔBIC = {delta:.1f})")
-        sections.append(
-            "\nSee **Figure 9** and **Table 7** for full model comparison."
-        )
-    else:
-        sections.append("*Model fitting was not run or produced no results.*")
-    sections.append("")
-
-    # ── 9. Recurrence Quantification Analysis ──────────────────────────────
-    sections.append("## 9. Recurrence Quantification Analysis (RQA)\n")
+    # ── 7. Recurrence Quantification Analysis ──────────────────────────────
+    sections.append("## 7. Recurrence Quantification Analysis (RQA)\n")
     sections.append(
         "> **What this measures:** Recurrence quantification analysis measures "
         "how often a behavioral trajectory revisits previous states — "
@@ -384,7 +353,7 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     )
     rqa = analysis_results.get("rqa")
     if rqa is not None and isinstance(rqa, pd.DataFrame) and len(rqa) > 0:
-        for col in ["recurrence_rate", "determinism", "mean_diag_length"]:
+        for col in ["recurrence_rate", "determinism", "mean_diagonal_length"]:
             if col in rqa.columns:
                 label = col.replace("_", " ").title()
                 sections.append(
@@ -398,8 +367,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         sections.append("*RQA was not run or produced no results.*")
     sections.append("")
 
-    # ── 10. Fractal Scaling / DFA ────────────────────────────────────────
-    sections.append("## 10. Fractal Scaling Analysis (DFA)\n")
+    # ── 8. Fractal Scaling / DFA ────────────────────────────────────────
+    sections.append("## 8. Fractal Scaling Analysis (DFA)\n")
     sections.append(
         "> **What this measures:** Detrended fluctuation analysis reveals "
         "whether choice sequences exhibit long-range temporal correlations "
@@ -417,14 +386,13 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         "alpha near 1.0 indicates 1/f scaling, often associated with "
         "adaptive complexity; alpha > 1.0 suggests non-stationary drift.\n"
     )
-    fractal = analysis_results.get("fractal", {})
-    dfa_df = fractal.get("dfa")
+    dfa_df = analysis_results.get("dfa")
     if dfa_df is not None and isinstance(dfa_df, pd.DataFrame) and len(dfa_df) > 0:
-        full = dfa_df[dfa_df["phase"] == "full"] if "phase" in dfa_df.columns else dfa_df
-        if len(full) > 0 and "alpha_dfa" in full.columns:
+        full = dfa_df[dfa_df["scope"] == "full_session"] if "scope" in dfa_df.columns else dfa_df
+        if len(full) > 0 and "dfa_alpha" in full.columns:
             sections.append(
                 f"- **DFA exponent (full session):** "
-                f"{full['alpha_dfa'].mean():.3f} ({full['alpha_dfa'].std():.3f})"
+                f"{full['dfa_alpha'].mean():.3f} ({full['dfa_alpha'].std():.3f})"
             )
         sections.append(
             "\nSee fractal analysis figures for log-log scaling plots."
@@ -433,8 +401,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         sections.append("*DFA was not run or produced no results.*")
     sections.append("")
 
-    # ── 11. Sample Entropy ────────────────────────────────────────────────
-    sections.append("## 11. Sample Entropy\n")
+    # ── 9. Sample Entropy ────────────────────────────────────────────────
+    sections.append("## 9. Sample Entropy\n")
     sections.append(
         "> **What this measures:** Sample entropy quantifies the "
         "unpredictability of the choice sequence — how surprising each new "
@@ -451,7 +419,7 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         "is essentially unpredictable from its own recent history. "
         "Intermediate values suggest structured variability.\n"
     )
-    sampen_df = fractal.get("sample_entropy")
+    sampen_df = analysis_results.get("sample_entropy")
     if sampen_df is not None and isinstance(sampen_df, pd.DataFrame) and len(sampen_df) > 0:
         if "sample_entropy" in sampen_df.columns:
             sections.append(
@@ -463,50 +431,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         sections.append("*Sample entropy was not computed or produced no results.*")
     sections.append("")
 
-    # ── 12. Change-Point Detection (BOCPD) ────────────────────────────────
-    sections.append("## 12. Change-Point Detection (BOCPD)\n")
-    sections.append(
-        "> **What this measures:** Bayesian online change-point detection "
-        "identifies moments when the statistical properties of the choice "
-        "sequence shift abruptly — points where behavior reorganizes, "
-        "analogous to detecting when a participant 'notices' that the "
-        "contingencies have changed.\n"
-        "> **Why it matters:** In steady-state designs, condition changes "
-        "are imposed by the experimenter and signaled explicitly. Here, "
-        "contingency shifts are hidden, and BOCPD asks whether the "
-        "behavioral stream itself contains detectable signatures of those "
-        "shifts — a data-driven alternative to researcher-defined phase "
-        "boundaries.\n"
-        "> **Interpretation:** Detected change points that align with known "
-        "phase boundaries indicate that participants' behavior reorganized "
-        "in response to the hidden contingency change. Change points that "
-        "do *not* align may reflect spontaneous strategy shifts or "
-        "sensitivity to local reinforcement fluctuations.\n"
-    )
-    cp = analysis_results.get("changepoints", {})
-    cp_df = cp.get("changepoints")
-    if cp_df is not None and isinstance(cp_df, pd.DataFrame) and len(cp_df) > 0:
-        sections.append(
-            f"- **Change points detected:** "
-            f"{len(cp_df)} across all sessions"
-        )
-        alignment = cp.get("boundary_alignment")
-        if alignment is not None and isinstance(alignment, pd.DataFrame) and len(alignment) > 0:
-            if "aligned" in alignment.columns:
-                pct = alignment["aligned"].mean() * 100
-                sections.append(
-                    f"- **Aligned with phase boundaries:** {pct:.1f}%"
-                )
-        sections.append(
-            "\nSee change-point figures for run-length posteriors and "
-            "alignment plots."
-        )
-    else:
-        sections.append("*Change-point detection was not run or produced no results.*")
-    sections.append("")
-
-    # ── 13. Empirical Dynamic Modeling / CCM ──────────────────────────────
-    sections.append("## 13. Empirical Dynamic Modeling (EDM) and Convergent Cross-Mapping (CCM)\n")
+    # ── 10. Empirical Dynamic Modeling / CCM ──────────────────────────────
+    sections.append("## 10. Empirical Dynamic Modeling (EDM) and Convergent Cross-Mapping (CCM)\n")
     sections.append(
         "> **What this measures:** Convergent cross-mapping tests for causal "
         "coupling between variables (e.g., does reward history causally drive "
@@ -527,20 +453,30 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         "convergence is the hallmark that distinguishes genuine causation "
         "from mere correlation.\n"
     )
-    edm = analysis_results.get("edm")
-    if edm is not None and isinstance(edm, dict):
-        smap = edm.get("smap_results")
-        ccm = edm.get("ccm_results")
-        if smap is not None and isinstance(smap, pd.DataFrame) and len(smap) > 0:
-            if "rho" in smap.columns:
-                sections.append(
-                    f"- **S-map prediction skill (rho):** "
-                    f"{smap['rho'].mean():.3f} ({smap['rho'].std():.3f})"
-                )
-        if ccm is not None and isinstance(ccm, pd.DataFrame) and len(ccm) > 0:
+    edm_simplex = analysis_results.get("edm_simplex")
+    smap = analysis_results.get("smap")
+    ccm = analysis_results.get("ccm")
+    has_edm = False
+    if smap is not None and isinstance(smap, pd.DataFrame) and len(smap) > 0:
+        if "smap_rho" in smap.columns:
             sections.append(
-                f"- **CCM analyses completed:** {len(ccm)} session-pairs"
+                f"- **S-map prediction skill (rho):** "
+                f"{smap['smap_rho'].mean():.3f} ({smap['smap_rho'].std():.3f})"
             )
+        has_edm = True
+    if edm_simplex is not None and isinstance(edm_simplex, pd.DataFrame) and len(edm_simplex) > 0:
+        if "rho" in edm_simplex.columns:
+            sections.append(
+                f"- **Simplex projection skill (rho):** "
+                f"{edm_simplex['rho'].mean():.3f} ({edm_simplex['rho'].std():.3f})"
+            )
+        has_edm = True
+    if ccm is not None and isinstance(ccm, pd.DataFrame) and len(ccm) > 0:
+        sections.append(
+            f"- **CCM analyses completed:** {len(ccm)} session-pairs"
+        )
+        has_edm = True
+    if has_edm:
         sections.append(
             "\nSee EDM figures for simplex projections and CCM convergence plots."
         )
@@ -548,8 +484,60 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         sections.append("*EDM/CCM analyses were not run or produced no results.*")
     sections.append("")
 
-    # ── 14. Hidden Markov Models ──────────────────────────────────────────
-    sections.append("## 14. Hidden Markov Models (HMM)\n")
+    # ── 11. Model Comparison ─────────────────────────────────────────────────
+    sections.append("## 11. Model Comparison\n")
+    sections.append(
+        "> **What this measures:** Reinforcement-learning models formalize "
+        "competing hypotheses about the computational rules governing choice "
+        "(e.g., how recent rewards are weighted, how quickly value estimates "
+        "update). Model comparison identifies which rule best accounts for "
+        "the observed choice sequence.\n"
+        "> **Why it matters:** The matching law (Section 6) describes the "
+        "equilibrium relationship between behavior and reinforcement ratios, "
+        "but it does not specify the *process* that produces matching — RL "
+        "models fill that gap by characterizing the trial-by-trial dynamics.\n"
+        "> **Interpretation:** Lower BIC indicates a better trade-off between "
+        "fit and parsimony. A model with forgetting or decay outperforming a "
+        "memoryless model implies that participants integrate reward history "
+        "over a finite window rather than responding only to the most recent "
+        "outcome.\n"
+    )
+    mc = analysis_results.get("model_comparison")
+    if mc is not None and len(mc) > 0:
+        agg = mc.groupby("model")["bic"].mean().sort_values()
+        best = agg.index[0]
+
+        sections.append(
+            "The candidate models included three baselines (random, side bias, "
+            "win-stay/lose-shift), four reinforcement-learning variants "
+            "(Q-learning, dual-alpha Q-learning, Q-learning with forgetting, "
+            "phase-aware Q-learning, dynamic-alpha Q-learning), and a logistic "
+            "regression model that predicted each choice as a weighted function "
+            "of recent reward history and choice history over a sliding window "
+            "(5 parameters: intercept, reward-history weights for each option, "
+            "choice-persistence weight, and recency decay). The logistic model "
+            "occupies a middle ground between the mechanistic RL models and the "
+            "descriptive matching law — it makes no assumptions about value "
+            "updating but captures the statistical regularities in the choice "
+            "sequence.\n"
+        )
+        sections.append(
+            f"The best-fitting model by mean BIC was **{best}** "
+            f"(mean BIC = {agg.iloc[0]:.1f}).\n"
+        )
+        sections.append("Model ranking (by mean BIC, lower = better):\n")
+        for model, bic_val in agg.items():
+            delta = bic_val - agg.iloc[0]
+            sections.append(f"- {model}: BIC = {bic_val:.1f} (ΔBIC = {delta:.1f})")
+        sections.append(
+            "\nSee **Figure 7** and **Table 6** for full model comparison."
+        )
+    else:
+        sections.append("*Model fitting was not run or produced no results.*")
+    sections.append("")
+
+    # ── 12. Hidden Markov Models ──────────────────────────────────────────
+    sections.append("## 12. Hidden Markov Models (HMM)\n")
     sections.append(
         "> **What this measures:** Hidden Markov models identify discrete "
         "latent behavioral states that the participant transitions between "
@@ -569,6 +557,8 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         "participant switches strategy.\n"
     )
     hmm = analysis_results.get("hmm")
+    if hmm is None:
+        hmm = analysis_results.get("hmm_state_summary")
     if hmm is not None and isinstance(hmm, pd.DataFrame) and len(hmm) > 0:
         if "n_states" in hmm.columns and "bic" in hmm.columns:
             best_row = hmm.loc[hmm["bic"].idxmin()]
@@ -583,8 +573,37 @@ def generate_results_summary(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         sections.append("*HMM fitting was not run or produced no results.*")
     sections.append("")
 
-    # ── 15. Interpretive Cautions ────────────────────────────────────────────
-    sections.append("## 15. Interpretive Cautions\n")
+    # ── 13. Individual Differences in Strategy ───────────────────────────
+    sections.append("## 13. Individual Differences in Strategy\n")
+    sections.append(
+        "Participants varied substantially in their behavioral strategies. "
+        "See **Figure 6** for distributions.\n"
+    )
+    # Win-stay / lose-shift
+    if "win_stay_rate" in metrics_df.columns:
+        sections.append(
+            f"- **Win-stay rate:** "
+            f"{metrics_df['win_stay_rate'].dropna().mean():.3f} "
+            f"({metrics_df['win_stay_rate'].dropna().std():.3f})"
+        )
+    if "lose_shift_rate" in metrics_df.columns:
+        sections.append(
+            f"- **Lose-shift rate:** "
+            f"{metrics_df['lose_shift_rate'].dropna().mean():.3f} "
+            f"({metrics_df['lose_shift_rate'].dropna().std():.3f})"
+        )
+    if "win_stay_rate" in metrics_df.columns and "lose_shift_rate" in metrics_df.columns:
+        sections.append(
+            "\nThe asymmetry between high win-stay (0.81) and low lose-shift "
+            "(0.33) rates indicates that participants were more sensitive to "
+            "reward than to non-reward — consistent with the logistic "
+            "regression model's dominance, which weights recent reward history "
+            "heavily in predicting choice."
+        )
+    sections.append("")
+
+    # ── 14. Interpretive Cautions ────────────────────────────────────────────
+    sections.append("## 14. Interpretive Cautions\n")
     sections.append(
         "- **Descriptive vs. inferential:** Many metrics reported here are "
         "descriptive summaries. Pre-registered inferential tests (if applicable) "

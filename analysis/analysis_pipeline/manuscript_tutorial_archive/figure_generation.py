@@ -96,6 +96,15 @@ def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     _figure5_state_space(events_df, fig_dir, fmt, config)
     _figure6_individual_differences(metrics_df, fig_dir, fmt, config)
     _figure7_model_comparison(analysis_results, fig_dir, fmt, config)
+    _figure8_rqa(analysis_results, events_df, fig_dir, fmt, config)
+    _figure9_dfa(analysis_results, fig_dir, fmt, config)
+    _figure10_entropy(analysis_results, fig_dir, fmt, config)
+    _figure11_ccm(analysis_results, fig_dir, fmt, config)
+    _figure12_smap(analysis_results, fig_dir, fmt, config)
+    _figure13_hmm(analysis_results, events_df, fig_dir, fmt, config)
+    _figure14_phenotypes(analysis_results, fig_dir, fmt, config)
+    _figure15_null_comparison(analysis_results, fig_dir, fmt, config)
+    _figure16_robustness(analysis_results, fig_dir, fmt, config)
 
     # Supplementary
     _supp_run_length_distribution(events_df, sup_dir, fmt, config)
@@ -171,12 +180,14 @@ def _figure2_example_trajectories(events_df, fig_dir, fmt, config):
     pick_idx = np.linspace(0, n - 1, min(4, n)).astype(int)
     selected = per_session.index[pick_idx]
 
-    fig, axes = plt.subplots(len(selected), 1, figsize=(14, 3.5 * len(selected)),
+    n_rows = len(selected) + 1  # 4 individual + 1 group average
+    fig, axes = plt.subplots(n_rows, 1, figsize=(14, 3.5 * n_rows),
                              sharex=True)
-    if len(selected) == 1:
+    if n_rows == 1:
         axes = [axes]
 
-    for ax, sid in zip(axes, selected):
+    # ── Rows 1–4: Individual example trajectories ──
+    for ax, sid in zip(axes[:len(selected)], selected):
         sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
         t = sdf["elapsed_time_s"].values
 
@@ -198,7 +209,43 @@ def _figure2_example_trajectories(events_df, fig_dir, fmt, config):
         sid_label = sid[:12] + "..." if len(str(sid)) > 12 else str(sid)
         ax.set_title(sid_label, fontsize=10, loc="left")
 
-    axes[-1].set_xlabel("Time (s)")
+    # ── Row 5: Group-average P(A) and P(B) in 10-s bins with 95% CI ──
+    ax_group = axes[-1]
+    bin_width = 10  # seconds
+    n_boot = config.get("n_bootstrap", 1000)
+    rng = np.random.default_rng(0)
+
+    # Compute per-session proportion in each time bin
+    pa_by_bin = {}  # {bin_center: [prop_A for each session]}
+    pb_by_bin = {}
+    for sid, sdf in events_df.groupby("session_id"):
+        sdf = sdf.sort_values("elapsed_time_s")
+        sdf_binned = sdf.copy()
+        sdf_binned["time_bin"] = (sdf_binned["elapsed_time_s"] // bin_width) * bin_width + bin_width / 2
+        for tb, grp in sdf_binned.groupby("time_bin"):
+            pa = grp["choice_a"].mean()
+            pa_by_bin.setdefault(tb, []).append(pa)
+            pb_by_bin.setdefault(tb, []).append(1 - pa)
+
+    bins_a, mean_a, lo_a, hi_a = _bootstrap_ci(pa_by_bin, n_boot=n_boot, rng=rng)
+    bins_b, mean_b, lo_b, hi_b = _bootstrap_ci(pb_by_bin, n_boot=n_boot, rng=rng)
+
+    ax_group.plot(bins_a, mean_a, color="#4393C3", lw=2, label="P(A)")
+    ax_group.fill_between(bins_a, lo_a, hi_a, color="#4393C3", alpha=0.2)
+    ax_group.plot(bins_b, mean_b, color="#D6604D", lw=2, label="P(B)")
+    ax_group.fill_between(bins_b, lo_b, hi_b, color="#D6604D", alpha=0.2)
+    ax_group.axhline(0.5, color="gray", ls="--", alpha=0.4, lw=0.6)
+
+    _phase_spans(ax_group, config)
+    _phase_lines(ax_group, config)
+
+    ax_group.set_ylim(0, 1)
+    ax_group.set_ylabel("Proportion")
+    ax_group.set_xlabel("Time (s)")
+    ax_group.set_title("Group average (N = %d)" % events_df["session_id"].nunique(),
+                       fontsize=10, loc="left")
+    ax_group.legend(loc="upper right", fontsize=9, framealpha=0.9)
+
     fig.suptitle("Figure 2: Example Behavioral Trajectories", fontsize=13, y=1.01)
     plt.tight_layout()
     _save(fig, os.path.join(fig_dir, f"figure2_example_trajectories.{fmt}"), config)
@@ -279,8 +326,8 @@ def _figure3_phase_transitions(events_df, fig_dir, fmt, config, n_boot):
                 # Individual trace
                 indiv = w.groupby("tb")[measure].mean()
                 ax.plot(indiv.index, indiv.values,
-                        color=indiv_palette[indiv_idx % len(indiv_palette)],
-                        alpha=0.35, lw=0.8)
+                        color="gray",
+                        alpha=0.12, lw=0.5)
                 indiv_idx += 1
 
                 for tb, grp in w.groupby("tb"):
@@ -681,29 +728,21 @@ def _figure6_individual_differences(metrics_df, fig_dir, fmt, config):
             z_data = (profile_data - profile_data.mean()) / profile_data.std().replace(0, 1)
             labels = [l for _, l in metric_defs]
 
-            palette = sns.color_palette("husl", len(z_data))
             x_pos = np.arange(len(labels))
 
-            for idx, (row_idx, row) in enumerate(z_data.iterrows()):
-                # Try to get a participant label
-                if "session_id" in metrics_df.columns:
-                    sid = metrics_df.loc[row_idx, "session_id"]
-                    plabel = str(sid)[:10]
-                else:
-                    plabel = f"P{idx+1}"
-                ax_profile.plot(x_pos, row.values, marker="o", ms=8,
-                                color=palette[idx], lw=2, alpha=0.8,
-                                label=plabel, zorder=3)
-
-            ax_profile.axhline(0, color="gray", ls="--", alpha=0.4, lw=0.8)
+            # Sort by first metric for visual clustering
+            sort_col = cols_available[0]
+            sorted_idx = profile_data[sort_col].sort_values().index
+            z_sorted = z_data.loc[sorted_idx]
+            im = ax_profile.imshow(z_sorted.values, aspect="auto", cmap="RdBu_r",
+                                    vmin=-3, vmax=3)
             ax_profile.set_xticks(x_pos)
             ax_profile.set_xticklabels(labels, fontsize=9)
-            ax_profile.set_ylabel("z-score")
+            ax_profile.set_ylabel("Participant (sorted)")
+            ax_profile.set_yticks([])  # too many to label
+            plt.colorbar(im, ax=ax_profile, label="z-score", shrink=0.8)
             ax_profile.set_title("A. Participant strategy profiles",
                                  fontsize=11, fontweight="bold", loc="left")
-            ax_profile.legend(fontsize=7, loc="best", framealpha=0.9,
-                              title="Participant", title_fontsize=8)
-            sns.despine(ax=ax_profile)
         else:
             ax_profile.text(0.5, 0.5, "Insufficient data for profiles",
                             ha="center", va="center", transform=ax_profile.transAxes,
@@ -775,8 +814,7 @@ def _figure7_model_comparison(analysis_results, fig_dir, fmt, config):
         "q_learning": "Q-Learning",
         "q_dual_alpha": "Q-Learning (Dual α)",
         "q_forgetting": "Q-Learning (Forgetting)",
-        "matching_strict": "Strict Matching",
-        "matching_generalized": "Generalized Matching",
+        "generalized_matching_law": "Generalized Matching Law",
     }
 
     mc = mc.copy()
@@ -800,22 +838,649 @@ def _figure7_model_comparison(analysis_results, fig_dir, fmt, config):
     ax.set_title("Mean BIC by Model", fontsize=10, fontweight="bold")
     sns.despine(ax=ax)
 
-    # Right: delta-BIC heatmap
+    # Right: proportion of sessions each model wins
     ax = axes[1]
-    bic_pivot = mc.pivot(index="session_short", columns="model_label", values="bic")
-    delta = bic_pivot.sub(bic_pivot.min(axis=1), axis=0)
-    col_order = delta.mean().sort_values().index
-    delta = delta[col_order]
-    sns.heatmap(delta, annot=True, fmt=".0f", cmap="YlOrRd", ax=ax,
-                cbar_kws={"label": "ΔBIC"}, linewidths=0.5)
-    ax.set_title("ΔBIC from Best (per session)", fontsize=10, fontweight="bold")
-    ax.set_ylabel("Session")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=35, ha="right", fontsize=8)
-    ax.set_xlabel("")  # remove default "model_label"
+    best_per_session = mc.loc[mc.groupby("session_id")["bic"].idxmin()]
+    win_counts = best_per_session["model_label"].value_counts()
+    # Order by mean BIC
+    model_order = agg.index.tolist()
+    win_counts = win_counts.reindex(model_order, fill_value=0)
+    bars = ax.barh(range(len(win_counts)), win_counts.values,
+                   color=[colors[i] for i in range(len(win_counts))],
+                   edgecolor="white", height=0.7)
+    ax.set_yticks(range(len(win_counts)))
+    ax.set_yticklabels(win_counts.index, fontsize=9)
+    ax.set_xlabel("Number of sessions where model is best")
+    ax.set_title("Best Model per Session", fontsize=10, fontweight="bold")
+    # Add count labels
+    for bar, count in zip(bars, win_counts.values):
+        if count > 0:
+            ax.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height()/2,
+                    str(count), va="center", fontsize=8)
+    sns.despine(ax=ax)
 
     fig.suptitle("Figure 7: Model Comparison", fontsize=13, y=1.02)
     plt.tight_layout()
     _save(fig, os.path.join(fig_dir, f"figure7_model_comparison.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 8 – RQA
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure8_rqa(analysis_results, events_df, fig_dir, fmt, config):
+    """RQA: (A) example recurrence plot, (B) metric distributions, (C) by phase."""
+    rqa_df = analysis_results.get("rqa")
+    if rqa_df is None or len(rqa_df) == 0:
+        print("  Figure 8 skipped: no RQA results.")
+        return
+
+    fig = plt.figure(figsize=(18, 6))
+    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1.2, 1])
+
+    # (A) Example recurrence plot
+    ax_rp = fig.add_subplot(gs[0])
+    sids = events_df["session_id"].unique()
+    if len(sids) > 0 and "rolling_choice_prop_a_clicks" in events_df.columns:
+        sid = sids[len(sids) // 2]  # pick a middle session
+        sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+        signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+        if len(signal) > 300:
+            signal = signal[::len(signal) // 300]
+        dist = np.abs(signal[:, None] - signal[None, :])
+        recurrence = (dist < 0.1).astype(int)
+        np.fill_diagonal(recurrence, 0)
+        ax_rp.imshow(recurrence, cmap="Greys", origin="lower", aspect="equal")
+        ax_rp.set_xlabel("Click index")
+        ax_rp.set_ylabel("Click index")
+    ax_rp.set_title("A. Example Recurrence Plot", fontsize=10, fontweight="bold",
+                     loc="left")
+
+    # (B) Metric distributions
+    ax_dist = fig.add_subplot(gs[1])
+    full = rqa_df[rqa_df["scope"] == "full_session"]
+    metrics = ["determinism", "recurrence_rate", "laminarity"]
+    labels = ["Determinism", "Recurrence Rate", "Laminarity"]
+    colors = ["#4393C3", "#D6604D", "#5AAE61"]
+    positions = np.arange(len(metrics))
+
+    parts = ax_dist.violinplot(
+        [full[m].dropna().values for m in metrics],
+        positions=positions, showmeans=True, showextrema=False
+    )
+    for i, pc in enumerate(parts["bodies"]):
+        pc.set_facecolor(colors[i])
+        pc.set_alpha(0.6)
+    parts["cmeans"].set_color("black")
+    ax_dist.set_xticks(positions)
+    ax_dist.set_xticklabels(labels, fontsize=9)
+    ax_dist.set_ylabel("Value")
+    ax_dist.set_title("B. RQA Metric Distributions", fontsize=10,
+                       fontweight="bold", loc="left")
+    sns.despine(ax=ax_dist)
+
+    # (C) Determinism by phase
+    ax_phase = fig.add_subplot(gs[2])
+    phase_data = rqa_df[rqa_df["phase_id"] > 0].copy()
+    if len(phase_data) > 0:
+        phase_data["phase_label"] = "Phase " + phase_data["phase_id"].astype(str)
+        for pid in sorted(phase_data["phase_id"].unique()):
+            color = _PHASE_COLORS.get(pid, "gray")
+            vals = phase_data.loc[phase_data["phase_id"] == pid, "determinism"].dropna()
+            ax_phase.boxplot(
+                [vals.values], positions=[pid], widths=0.5,
+                patch_artist=True,
+                boxprops=dict(facecolor=color, alpha=0.5),
+                medianprops=dict(color="black"),
+                showfliers=False,
+            )
+            jitter = np.random.default_rng(pid).uniform(-0.12, 0.12, len(vals))
+            ax_phase.scatter(pid + jitter, vals.values, s=15, alpha=0.4,
+                             color=color, zorder=3)
+        ax_phase.set_xticks([1, 2, 3, 4])
+        ax_phase.set_xticklabels(["Ph 1\nSymmetric", "Ph 2\nA-adv",
+                                   "Ph 3\nB-adv", "Ph 4\nScarcity"], fontsize=8)
+    ax_phase.set_ylabel("Determinism")
+    ax_phase.set_title("C. Determinism by Phase", fontsize=10,
+                        fontweight="bold", loc="left")
+    sns.despine(ax=ax_phase)
+
+    fig.suptitle("Figure 8: Recurrence Quantification Analysis", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure8_rqa.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 9 – DFA
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure9_dfa(analysis_results, fig_dir, fmt, config):
+    """DFA: (A) distribution with reference lines, (B) by phase."""
+    dfa_df = analysis_results.get("dfa")
+    if dfa_df is None or len(dfa_df) == 0:
+        print("  Figure 9 skipped: no DFA results.")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (A) Distribution
+    ax = axes[0]
+    full = dfa_df[dfa_df["scope"] == "full_session"]
+    vals = full["dfa_alpha"].dropna()
+    ax.hist(vals, bins=15, color="steelblue", edgecolor="white", alpha=0.8)
+    ax.axvline(0.5, color="red", ls="--", lw=1.5, label="Random (0.5)")
+    ax.axvline(1.0, color="orange", ls="--", lw=1.5, label="1/f noise (1.0)")
+    ax.axvline(vals.median(), color="darkblue", ls="-", lw=2,
+               label=f"Median ({vals.median():.2f})")
+    ax.set_xlabel("DFA α")
+    ax.set_ylabel("Count")
+    ax.set_title("A. DFA Exponent Distribution", fontsize=10,
+                  fontweight="bold", loc="left")
+    ax.legend(fontsize=8)
+    sns.despine(ax=ax)
+
+    # (B) By phase
+    ax = axes[1]
+    phase_data = dfa_df[dfa_df["phase_id"] > 0].copy()
+    # Clip implausible DFA values (valid range ~0-2)
+    phase_data = phase_data[phase_data["dfa_alpha"] <= 2.5].copy()
+    if len(phase_data) > 0:
+        for pid in sorted(phase_data["phase_id"].unique()):
+            color = _PHASE_COLORS.get(pid, "gray")
+            vals_p = phase_data.loc[phase_data["phase_id"] == pid,
+                                     "dfa_alpha"].dropna()
+            ax.boxplot(
+                [vals_p.values], positions=[pid], widths=0.5,
+                patch_artist=True,
+                boxprops=dict(facecolor=color, alpha=0.5),
+                medianprops=dict(color="black"),
+                showfliers=False,
+            )
+            jitter = np.random.default_rng(pid).uniform(-0.12, 0.12, len(vals_p))
+            ax.scatter(pid + jitter, vals_p.values, s=15, alpha=0.4,
+                       color=color, zorder=3)
+        ax.set_xticks([1, 2, 3, 4])
+        ax.set_xticklabels(["Ph 1\nSymmetric", "Ph 2\nA-adv",
+                             "Ph 3\nB-adv", "Ph 4\nScarcity"], fontsize=8)
+    ax.axhline(0.5, color="red", ls="--", alpha=0.5, lw=0.8)
+    ax.set_ylabel("DFA α")
+    ax.set_title("B. DFA by Phase", fontsize=10, fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    fig.suptitle("Figure 9: Detrended Fluctuation Analysis", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure9_dfa.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 10 – Sample Entropy
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure10_entropy(analysis_results, fig_dir, fmt, config):
+    """Sample entropy: (A) distribution, (B) by phase."""
+    se_df = analysis_results.get("sample_entropy")
+    if se_df is None or len(se_df) == 0:
+        print("  Figure 10 skipped: no sample entropy results.")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (A) Distribution
+    ax = axes[0]
+    full = se_df[se_df["scope"] == "full_session"]
+    vals = full["sample_entropy"].dropna()
+    ax.hist(vals, bins=15, color="teal", edgecolor="white", alpha=0.8)
+    ax.set_xlabel("Sample Entropy")
+    ax.set_ylabel("Count")
+    ax.set_title("A. Sample Entropy Distribution", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    # (B) By phase
+    ax = axes[1]
+    phase_data = se_df[se_df["phase_id"] > 0].copy()
+    if len(phase_data) > 0:
+        for pid in sorted(phase_data["phase_id"].unique()):
+            color = _PHASE_COLORS.get(pid, "gray")
+            vals_p = phase_data.loc[phase_data["phase_id"] == pid,
+                                     "sample_entropy"].dropna()
+            ax.boxplot(
+                [vals_p.values], positions=[pid], widths=0.5,
+                patch_artist=True,
+                boxprops=dict(facecolor=color, alpha=0.5),
+                medianprops=dict(color="black"),
+                showfliers=False,
+            )
+            jitter = np.random.default_rng(pid).uniform(-0.12, 0.12, len(vals_p))
+            ax.scatter(pid + jitter, vals_p.values, s=15, alpha=0.4,
+                       color=color, zorder=3)
+        ax.set_xticks([1, 2, 3, 4])
+        ax.set_xticklabels(["Ph 1\nSymmetric", "Ph 2\nA-adv",
+                             "Ph 3\nB-adv", "Ph 4\nScarcity"], fontsize=8)
+    ax.set_ylabel("Sample Entropy")
+    ax.set_title("B. Sample Entropy by Phase", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    fig.suptitle("Figure 10: Sample Entropy", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure10_entropy.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 11 – CCM
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure11_ccm(analysis_results, fig_dir, fmt, config):
+    """CCM convergence: reward→choice vs choice→reward."""
+    ccm_df = analysis_results.get("ccm")
+    if ccm_df is None or len(ccm_df) == 0:
+        print("  Figure 11 skipped: no CCM results.")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (A) Group-average convergence curves
+    ax = axes[0]
+    group = ccm_df.groupby("lib_size").agg(
+        rc_mean=("rho_reward_causes_choice", "mean"),
+        rc_sem=("rho_reward_causes_choice", "sem"),
+        cr_mean=("rho_choice_causes_reward", "mean"),
+        cr_sem=("rho_choice_causes_reward", "sem"),
+    ).reset_index()
+
+    ax.plot(group["lib_size"], group["rc_mean"], "o-", color="#4393C3",
+            lw=2, markersize=5, label="Reward → Choice")
+    ax.fill_between(group["lib_size"],
+                    group["rc_mean"] - group["rc_sem"],
+                    group["rc_mean"] + group["rc_sem"],
+                    alpha=0.15, color="#4393C3")
+    ax.plot(group["lib_size"], group["cr_mean"], "s-", color="#D6604D",
+            lw=2, markersize=5, label="Choice → Reward")
+    ax.fill_between(group["lib_size"],
+                    group["cr_mean"] - group["cr_sem"],
+                    group["cr_mean"] + group["cr_sem"],
+                    alpha=0.15, color="#D6604D")
+
+    ax.set_xlabel("Library Size")
+    ax.set_ylabel("Cross-Mapping ρ")
+    ax.set_title("A. Group-Average Convergence", fontsize=10,
+                  fontweight="bold", loc="left")
+    ax.legend(fontsize=9)
+    sns.despine(ax=ax)
+
+    # (B) Per-session asymmetry at max library size
+    ax = axes[1]
+    max_lib = ccm_df.loc[ccm_df.groupby("session_id")["lib_size"].idxmax()]
+    if "rho_reward_causes_choice" in max_lib.columns:
+        rc = max_lib["rho_reward_causes_choice"].values
+        cr = max_lib["rho_choice_causes_reward"].values
+        ax.scatter(cr, rc, s=40, alpha=0.7, color="steelblue", edgecolors="white")
+        lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]),
+                max(ax.get_xlim()[1], ax.get_ylim()[1])]
+        ax.plot(lims, lims, "--", color="gray", alpha=0.5)
+        ax.set_xlabel("Choice → Reward ρ")
+        ax.set_ylabel("Reward → Choice ρ")
+    ax.set_title("B. Per-Session Asymmetry", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    fig.suptitle("Figure 11: Convergent Cross-Mapping", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure11_ccm.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 12 – S-Map
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure12_smap(analysis_results, fig_dir, fmt, config):
+    """S-Map nonlinearity: simplex vs S-Map prediction."""
+    smap_df = analysis_results.get("smap")
+    if smap_df is None or len(smap_df) == 0:
+        print("  Figure 12 skipped: no S-Map results.")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (A) Simplex vs S-Map rho
+    ax = axes[0]
+    ax.scatter(smap_df["simplex_rho"], smap_df["smap_rho"],
+               s=40, alpha=0.7, color="steelblue", edgecolors="white")
+    lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]),
+            max(ax.get_xlim()[1], ax.get_ylim()[1])]
+    ax.plot(lims, lims, "--", color="gray", alpha=0.5)
+    ax.set_xlabel("Simplex ρ (linear)")
+    ax.set_ylabel("S-Map ρ (nonlinear)")
+    ax.set_title("A. Linear vs Nonlinear Prediction", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    # (B) Nonlinearity distribution
+    ax = axes[1]
+    ax.hist(smap_df["nonlinearity"].dropna(), bins=15, color="teal",
+            edgecolor="white", alpha=0.8)
+    ax.axvline(0, color="red", ls="--", lw=1.5)
+    ax.set_xlabel("Nonlinearity (Δρ = S-Map − Simplex)")
+    ax.set_ylabel("Count")
+    ax.set_title("B. Nonlinearity Score Distribution", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    fig.suptitle("Figure 12: S-Map Nonlinearity Analysis", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure12_smap.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 13 – HMM
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure13_hmm(analysis_results, events_df, fig_dir, fmt, config):
+    """HMM: (A) state assignments on trajectories, (B) state occupancy by phase."""
+    # Try state sequences first (has per-click assignments)
+    hmm_seqs = analysis_results.get("hmm_state_sequences", {})
+    if not hmm_seqs:
+        # Fall back to summary
+        hmm_summary = analysis_results.get("hmm_state_summary")
+        if hmm_summary is None or len(hmm_summary) == 0:
+            print("  Figure 13 skipped: no HMM results.")
+            # Still create empty figure with note
+            fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+            axes[0].text(0.5, 0.5, "HMM fitting did not converge",
+                         ha="center", va="center", transform=axes[0].transAxes)
+            axes[0].set_title("A. HMM State Assignments", fontsize=10, fontweight="bold", loc="left")
+            axes[1].text(0.5, 0.5, "No state occupancy data",
+                         ha="center", va="center", transform=axes[1].transAxes)
+            axes[1].set_title("B. State Occupancy by Phase", fontsize=10, fontweight="bold", loc="left")
+            fig.suptitle("Figure 13: Hidden Markov Model Analysis", fontsize=13, y=1.02)
+            plt.tight_layout()
+            _save(fig, os.path.join(fig_dir, f"figure13_hmm.{fmt}"), config)
+            return
+        hmm_seqs = {}
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # (A) State assignments on example session
+    ax = axes[0]
+    state_colors = ["#4393C3", "#D6604D", "#5AAE61", "#984EA3"]
+    if hmm_seqs:
+        sids = list(hmm_seqs.keys())
+        sid = sids[0]
+        sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+        seq = hmm_seqs[sid]
+        states = seq["states"]
+        n_states = seq["n_states"]
+
+        signal_col = "rolling_choice_prop_a_clicks" if "rolling_choice_prop_a_clicks" in sdf.columns else "choice_a"
+        t = sdf["elapsed_time_s"].values[:len(states)]
+        signal = sdf[signal_col].values[:len(states)]
+
+        for s in range(n_states):
+            mask = states == s
+            if mask.any():
+                ax.scatter(t[mask], signal[mask], s=8, alpha=0.5,
+                           color=state_colors[s % len(state_colors)],
+                           label=f"State {s}")
+        ax.plot(t, signal, color="black", alpha=0.2, lw=0.5)
+        _phase_lines(ax, config)
+        ax.set_ylim(0, 1)
+        ax.legend(fontsize=8, loc="upper right")
+    else:
+        ax.text(0.5, 0.5, "No per-click state data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=11, color="gray")
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("P(Choose A)")
+    ax.set_title("A. HMM State Assignments", fontsize=10, fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    # (B) State occupancy by phase
+    ax = axes[1]
+    if hmm_seqs:
+        phase_boundaries = config.get("phase_boundaries", [])
+        phase_state_counts = {}
+        for sid, seq in hmm_seqs.items():
+            sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+            states = seq["states"]
+            phases = sdf["phase_id"].values[:len(states)]
+            for pb in phase_boundaries:
+                pid = pb["id"]
+                phase_mask = phases == pid
+                if phase_mask.sum() == 0:
+                    continue
+                for s in range(seq["n_states"]):
+                    key = (pid, s)
+                    phase_state_counts.setdefault(key, []).append((states[phase_mask] == s).mean())
+
+        if phase_state_counts:
+            # Build aggregated data
+            all_phases = sorted(set(k[0] for k in phase_state_counts.keys()))
+            all_states_list = sorted(set(k[1] for k in phase_state_counts.keys()))
+            x = np.arange(len(all_phases))
+            width = 0.8 / max(len(all_states_list), 1)
+            for i, s in enumerate(all_states_list):
+                means = [np.mean(phase_state_counts.get((p, s), [0])) for p in all_phases]
+                ax.bar(x + i * width - 0.4 + width/2, means, width,
+                       color=state_colors[s % len(state_colors)],
+                       label=f"State {s}", edgecolor="white")
+            ax.set_xticks(x)
+            ax.set_xticklabels([f"Phase {p}" for p in all_phases], fontsize=9)
+            ax.set_ylabel("Proportion of Time")
+            ax.legend(title="State", fontsize=8, title_fontsize=9)
+            ax.set_ylim(0, 1)
+    else:
+        ax.text(0.5, 0.5, "No state occupancy data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=11, color="gray")
+
+    ax.set_title("B. State Occupancy by Phase", fontsize=10, fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    fig.suptitle("Figure 13: Hidden Markov Model Analysis", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure13_hmm.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 14 – Behavioral Phenotypes
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure14_phenotypes(analysis_results, fig_dir, fmt, config):
+    """Behavioral phenotypes: (A) PCA biplot, (B) cluster profile heatmap."""
+    id_results = analysis_results.get("individual_differences", {})
+    pca_df = id_results.get("pca")
+    cluster_df = id_results.get("cluster_assignments")
+    profile_df = id_results.get("cluster_profiles")
+    pca_model = id_results.get("pca_model")
+    feature_names = id_results.get("feature_names", [])
+
+    if pca_df is None or cluster_df is None:
+        print("  Figure 14 skipped: no individual differences results.")
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # (A) PCA biplot colored by cluster
+    ax = axes[0]
+    labels = cluster_df["cluster"].values
+    n_clusters = len(np.unique(labels))
+    palette = sns.color_palette("Set2", n_clusters)
+
+    if "PC1" in pca_df.columns and "PC2" in pca_df.columns:
+        pc1 = pca_df["PC1"].values
+        pc2 = pca_df["PC2"].values
+        for cl in range(n_clusters):
+            mask = labels == cl
+            ax.scatter(pc1[mask], pc2[mask], s=60, alpha=0.8,
+                       color=palette[cl], edgecolors="white", linewidths=0.5,
+                       label=f"Cluster {cl} (n={mask.sum()})")
+
+        # Add loading vectors if PCA model available
+        if pca_model is not None and len(feature_names) > 0:
+            loadings = pca_model.components_[:2].T
+            score_range = max(np.abs(np.concatenate([pc1, pc2])).max(), 1e-6)
+            load_max = max(np.abs(loadings).max(), 1e-6)
+            scale = score_range / load_max * 0.7
+            for i, feat in enumerate(feature_names):
+                dx, dy = loadings[i, 0] * scale, loadings[i, 1] * scale
+                ax.annotate("", xy=(dx, dy), xytext=(0, 0),
+                             arrowprops=dict(arrowstyle="->", color="firebrick",
+                                             lw=1.2, alpha=0.7))
+                short = feat.replace("overall_", "").replace("_", " ")[:12]
+                ax.text(dx * 1.1, dy * 1.1, short, fontsize=6.5,
+                         ha="center", color="firebrick")
+
+        ev = id_results.get("explained_variance", [0, 0])
+        ax.set_xlabel(f"PC1 ({ev[0]*100:.1f}%)" if len(ev) > 0 else "PC1")
+        ax.set_ylabel(f"PC2 ({ev[1]*100:.1f}%)" if len(ev) > 1 else "PC2")
+    ax.legend(fontsize=8)
+    ax.set_title("A. PCA Biplot by Cluster", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    # (B) Cluster profile heatmap
+    ax = axes[1]
+    if profile_df is not None and len(profile_df) > 0:
+        best_k = id_results.get("best_k", n_clusters)
+        pivot = profile_df.pivot(index="feature", columns="cluster",
+                                  values="mean_z")
+        # Sort by max absolute difference between clusters
+        pivot = pivot.loc[pivot.std(axis=1).sort_values(ascending=False).index]
+        short_labels = [f.replace("overall_", "").replace("_", " ")[:15]
+                        for f in pivot.index]
+        sns.heatmap(pivot, annot=True, fmt=".2f", cmap="RdBu_r",
+                    center=0, linewidths=0.5, ax=ax,
+                    yticklabels=short_labels,
+                    xticklabels=[f"Cluster {c}" for c in range(best_k)])
+        ax.set_ylabel("")
+    ax.set_title("B. Cluster Profiles (z-scored)", fontsize=10,
+                  fontweight="bold", loc="left")
+
+    fig.suptitle("Figure 14: Behavioral Phenotypes", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure14_phenotypes.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 15 – Null Comparison
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure15_null_comparison(analysis_results, fig_dir, fmt, config):
+    """Null comparison: real data vs synthetic null processes."""
+    null_table = analysis_results.get("null_comparison_table")
+    if null_table is None or len(null_table) == 0:
+        print("  Figure 15 skipped: no null comparison results.")
+        return
+
+    metrics = null_table["metric"].values
+    n_metrics = len(metrics)
+    n_cols = min(4, n_metrics)
+    n_rows = int(np.ceil(n_metrics / n_cols))
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(4.5 * n_cols, 4.5 * n_rows))
+    axes = np.atleast_1d(axes).ravel()
+
+    process_labels = ["Real", "Random", "Matching", "WSLS"]
+    bar_colors = ["#2196F3", "#9E9E9E", "#FF9800", "#4CAF50"]
+
+    for i, (_, row) in enumerate(null_table.iterrows()):
+        if i >= len(axes):
+            break
+        ax = axes[i]
+        means = [row["real_mean"], row["random_mean"],
+                 row["matching_mean"], row["wsls_mean"]]
+        sds = [row["real_sd"], row["random_sd"],
+               row["matching_sd"], row["wsls_sd"]]
+        positions = np.arange(len(process_labels))
+
+        ax.bar(positions, means, yerr=sds, color=bar_colors,
+               edgecolor="white", width=0.6, capsize=4, alpha=0.8)
+        ax.set_xticks(positions)
+        ax.set_xticklabels(process_labels, fontsize=8)
+        title = row["metric"].replace("_", " ").title()
+        ax.set_title(title, fontsize=10)
+        sns.despine(ax=ax)
+
+    for j in range(n_metrics, len(axes)):
+        axes[j].set_visible(False)
+
+    fig.suptitle("Figure 15: Null Comparison", fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure15_null_comparison.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 16 – Robustness Checks
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _figure16_robustness(analysis_results, fig_dir, fmt, config):
+    """Robustness checks: parameter sensitivity across analyses."""
+    rob = analysis_results.get("robustness", {})
+    if not rob:
+        print("  Figure 16 skipped: no robustness results.")
+        return
+
+    rw_results = rob.get("rolling_window", {})
+    dfa_results = rob.get("dfa_window", {})
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (A) DFA alpha vs rolling window
+    ax = axes[0]
+    if rw_results:
+        windows = sorted(rw_results.keys())
+        means = [rw_results[w]["dfa_alpha"].mean() for w in windows
+                 if len(rw_results[w]) > 0]
+        sds = [rw_results[w]["dfa_alpha"].std() for w in windows
+               if len(rw_results[w]) > 0]
+        valid_windows = [w for w in windows if len(rw_results[w]) > 0]
+        if valid_windows:
+            ax.errorbar(valid_windows, means, yerr=sds, fmt="o-",
+                        color="steelblue", capsize=4, lw=1.5, markersize=6)
+            default_win = config.get("rolling_window_clicks", 20)
+            ax.axvline(default_win, color="red", ls="--", alpha=0.5,
+                       label=f"Default ({default_win})")
+            ax.legend(fontsize=8)
+    ax.set_xlabel("Rolling Window Size (clicks)")
+    ax.set_ylabel("DFA α")
+    ax.set_title("A. DFA vs Rolling Window", fontsize=10,
+                  fontweight="bold", loc="left")
+    sns.despine(ax=ax)
+
+    # (B) DFA cross-correlation heatmap
+    ax = axes[1]
+    if dfa_results and "pair_correlations" in dfa_results:
+        records = dfa_results["records"]
+        pair_corrs = dfa_results["pair_correlations"]
+        min_windows = sorted(records.keys())
+        n_mw = len(min_windows)
+        corr_matrix = np.ones((n_mw, n_mw))
+        for (w1, w2), r in pair_corrs.items():
+            i1 = min_windows.index(w1)
+            i2 = min_windows.index(w2)
+            corr_matrix[i1, i2] = r
+            corr_matrix[i2, i1] = r
+        im = ax.imshow(corr_matrix, cmap="RdYlGn", vmin=0, vmax=1)
+        ax.set_xticks(range(n_mw))
+        ax.set_xticklabels(min_windows)
+        ax.set_yticks(range(n_mw))
+        ax.set_yticklabels(min_windows)
+        for i_idx in range(n_mw):
+            for j_idx in range(n_mw):
+                val = corr_matrix[i_idx, j_idx]
+                if not np.isnan(val):
+                    ax.text(j_idx, i_idx, f"{val:.2f}", ha="center",
+                            va="center", fontsize=9)
+        fig.colorbar(im, ax=ax, shrink=0.8)
+    ax.set_xlabel("DFA Min Window")
+    ax.set_ylabel("DFA Min Window")
+    ax.set_title("B. DFA Cross-Correlation", fontsize=10,
+                  fontweight="bold", loc="left")
+
+    fig.suptitle("Figure 16: Sensitivity and Robustness Checks",
+                 fontsize=13, y=1.02)
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure16_robustness.{fmt}"), config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

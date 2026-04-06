@@ -191,7 +191,8 @@ echo "=== Running full analysis pipeline ==="
 python run_analysis.py \\
     --config config.yaml \\
     --steps validate transform metrics plots phase pulse dynamical \\
-           changepoint fractal models individual_differences report
+           fractal models hmm individual_differences null_comparison \\
+           robustness report manuscript
 
 echo "=== Done ==="
 """
@@ -281,7 +282,8 @@ def _build_readme(manifest):
     lines.append("pip install -r requirements.txt")
     lines.append("python run_analysis.py --config config.yaml \\")
     lines.append("    --steps validate transform metrics plots phase pulse dynamical \\")
-    lines.append("           changepoint fractal models individual_differences report")
+    lines.append("           fractal models hmm individual_differences null_comparison \\")
+    lines.append("           robustness report manuscript")
     lines.append("```")
     lines.append("")
     lines.append("The `analysis_config.json` file records the exact configuration used.")
