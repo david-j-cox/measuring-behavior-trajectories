@@ -178,11 +178,11 @@ def run_null_comparison(events_df, config, output_dir):
         comparison_table : pd.DataFrame  (metric x process summary)
         null_results : dict of per-process metric DataFrames
     """
-    from analysis_pipeline.transform import compute_derived_variables
-    from analysis_pipeline.fractal_analysis import (
+    from pipeline.transform import compute_derived_variables
+    from pipeline.fractal_analysis import (
         _compute_dfa, _sample_entropy,
     )
-    from analysis_pipeline.dynamical_analysis import _compute_rqa_metrics
+    from pipeline.dynamical_analysis import _compute_rqa_metrics
 
     tables_dir = os.path.join(output_dir, "tables")
     fig_dir = os.path.join(output_dir, "figures", "null_comparison")

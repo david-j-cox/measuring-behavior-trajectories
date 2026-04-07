@@ -12,10 +12,10 @@ Runs:
   6. NDS diagnostics (RQA, DFA, EDM, changepoint, PCA+clustering)
 
 Usage:
-    python run_empirical_paper.py                    # full pipeline
-    python run_empirical_paper.py --models-only      # just model fitting
-    python run_empirical_paper.py --skip-models      # skip models, run NDS
-    python run_empirical_paper.py --n-sessions 5     # subset for testing
+    python run.py                    # full pipeline
+    python run.py --models-only      # just model fitting
+    python run.py --skip-models      # skip models, run NDS
+    python run.py --n-sessions 5     # subset for testing
 """
 
 import argparse
@@ -28,11 +28,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from analysis_pipeline.utils import load_config, ensure_dirs
-from analysis_pipeline.io import load_data
-from analysis_pipeline.validate import validate_events
-from analysis_pipeline.transform import compute_derived_variables
-from analysis_pipeline.metrics import compute_session_metrics
+from pipeline.utils import load_config, ensure_dirs
+from pipeline.io import load_data
+from pipeline.validate import validate_events
+from pipeline.transform import compute_derived_variables
+from pipeline.metrics import compute_session_metrics
 
 
 def main():
@@ -59,7 +59,7 @@ def main():
 
     output_dir = config.get("output_dir", "./outputs")
     ensure_dirs(output_dir)
-    paper_dir = os.path.join(output_dir, "empirical_paper")
+    paper_dir = os.path.join(output_dir, "figures")
     for subdir in ["tables", "figures", "supplementary"]:
         os.makedirs(os.path.join(paper_dir, subdir), exist_ok=True)
 
@@ -107,7 +107,7 @@ def main():
 
         # Historical dynamics models
         print("\n--- Historical dynamics models ---")
-        from analysis_pipeline.models.historical_dynamics import fit_historical_models
+        from pipeline.models.historical_dynamics import fit_historical_models
         print("  Melioration, Kinetic, Momentum, Hill-climbing...")
         t1 = time.time()
         hist_results = fit_historical_models(events_df, config)
@@ -116,14 +116,14 @@ def main():
 
         # Matching law (benchmark)
         print("\n--- Matching law (benchmark) ---")
-        from analysis_pipeline.models.matching_models import fit_matching_models
+        from pipeline.models.matching_models import fit_matching_models
         matching_results = fit_matching_models(events_df, metrics_df, config)
         print(f"  {len(matching_results)} fits")
         model_dfs.append(matching_results)
 
         # Baseline models
         print("\n--- Baseline models ---")
-        from analysis_pipeline.models.baseline_models import fit_all_baselines
+        from pipeline.models.baseline_models import fit_all_baselines
         baseline_results = fit_all_baselines(events_df)
         # Drop logistic (not a process model)
         baseline_results = baseline_results[
@@ -134,7 +134,7 @@ def main():
 
         # RL models
         print("\n--- RL models ---")
-        from analysis_pipeline.models.rl_models import fit_rl_models
+        from pipeline.models.rl_models import fit_rl_models
         rl_results = fit_rl_models(events_df, config)
         # Keep only: q_learning, q_dual_alpha, q_forgetting
         rl_results = rl_results[rl_results["model"].isin([
@@ -146,7 +146,7 @@ def main():
         # HMM
         print("\n--- HMM ---")
         try:
-            from analysis_pipeline.models.hmm_models import (
+            from pipeline.models.hmm_models import (
                 fit_hmm_models, summarize_hmm_states,
             )
             hmm_results, hmm_state_sequences = fit_hmm_models(
@@ -192,13 +192,13 @@ def main():
 
         # Phase analysis
         print("\n--- Phase analysis ---")
-        from analysis_pipeline.phase_analysis import run_phase_analysis
+        from pipeline.phase_analysis import run_phase_analysis
         phase_results = run_phase_analysis(events_df, metrics_df, config, output_dir)
         analysis_results.update(phase_results)
 
         # Dynamical analysis (RQA, state space, EDM)
         print("\n--- Dynamical analysis ---")
-        from analysis_pipeline.dynamical_analysis import run_dynamical_analysis
+        from pipeline.dynamical_analysis import run_dynamical_analysis
         dyn_results = run_dynamical_analysis(events_df, config, output_dir)
         analysis_results.update(dyn_results)
         plt.close("all")
@@ -206,7 +206,7 @@ def main():
 
         # Fractal analysis (DFA, sample entropy)
         print("\n--- Fractal analysis ---")
-        from analysis_pipeline.fractal_analysis import run_fractal_analysis
+        from pipeline.fractal_analysis import run_fractal_analysis
         fractal_results = run_fractal_analysis(events_df, config, output_dir)
         analysis_results.update(fractal_results)
         plt.close("all")
@@ -214,7 +214,7 @@ def main():
 
         # Individual differences (PCA + GMM clustering)
         print("\n--- Individual differences ---")
-        from analysis_pipeline.individual_differences import run_individual_differences
+        from pipeline.individual_differences import run_individual_differences
         id_results = run_individual_differences(
             metrics_df, analysis_results, config, output_dir
         )
@@ -224,7 +224,7 @@ def main():
     print("\n" + "-" * 40)
     print("FIGURE GENERATION")
     print("-" * 40)
-    from analysis_pipeline.empirical_paper.figure_generation import (
+    from pipeline.figures.figure_generation import (
         generate_all_figures,
     )
     generate_all_figures(events_df, metrics_df, analysis_results, config,

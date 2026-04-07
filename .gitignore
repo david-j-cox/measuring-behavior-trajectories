@@ -1,8 +1,6 @@
 .DS_Store
 *.log
-node_modules/
-package.json
-package-lock.json
+experiment/node_modules/
 
 # Firebase credentials (use firebase-config.example.js as template)
 experiment/js/firebase-config.js

@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from itertools import combinations
 
-from analysis_pipeline.fractal_analysis import compute_dfa
+from pipeline.fractal_analysis import compute_dfa
 
 
 def run_robustness_checks(events_df: pd.DataFrame, config: dict,

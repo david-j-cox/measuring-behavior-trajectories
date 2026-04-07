@@ -15,7 +15,7 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from analysis_pipeline.empirical_paper.figure_generation import generate_all_figures
+from pipeline.figures.figure_generation import generate_all_figures
 
 
 def main():
@@ -41,7 +41,7 @@ def main():
     analysis_results = {}
 
     # Model comparison
-    mc_path = os.path.join(output_dir, "empirical_paper", "tables",
+    mc_path = os.path.join(output_dir, "figures", "tables",
                            "model_comparison.csv")
     if not os.path.exists(mc_path):
         mc_path = os.path.join(tables_dir, "model_comparison.csv")
@@ -70,7 +70,7 @@ def main():
     # HMM state sequences (per-click assignments)
     hmm_seq_path = os.path.join(tables_dir, "hmm_state_sequences.json")
     if os.path.exists(hmm_seq_path):
-        from analysis_pipeline.models.hmm_models import load_state_sequences
+        from pipeline.models.hmm_models import load_state_sequences
         analysis_results["hmm_state_sequences"] = load_state_sequences(
             hmm_seq_path)
         print(f"  HMM sequences: {len(analysis_results['hmm_state_sequences'])} sessions")

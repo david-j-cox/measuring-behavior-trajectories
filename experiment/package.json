@@ -1,0 +1,15 @@
+{
+  "name": "measuring-behavior-trajectories",
+  "version": "1.0.0",
+  "description": "A browser-based two-option depleting-patch foraging task designed to generate behavioral time-series data revealing dynamic trajectories, transient adaptation, path dependence, oscillation, and switching dynamics.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "firebase": "^12.10.0"
+  }
+}

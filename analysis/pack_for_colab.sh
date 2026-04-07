@@ -4,8 +4,8 @@
 #   bash pack_for_colab.sh
 #
 # This creates analysis_code.zip containing:
-#   - analysis_pipeline/ (all Python modules)
-#   - run_empirical_paper.py (entry point)
+#   - pipeline/ (all Python modules)
+#   - run.py (entry point)
 #   - config.yaml
 #
 # Then upload analysis_code.zip + data/events.csv to Colab.
@@ -17,14 +17,14 @@ ZIP_NAME="analysis_code.zip"
 rm -f "$ZIP_NAME"
 
 zip -r "$ZIP_NAME" \
-    analysis_pipeline/*.py \
-    analysis_pipeline/models/*.py \
-    analysis_pipeline/empirical_paper/*.py \
-    run_empirical_paper.py \
+    pipeline/*.py \
+    pipeline/models/*.py \
+    pipeline/figures/*.py \
+    run.py \
     config.yaml \
-    -x "analysis_pipeline/manuscript_tutorial_archive/*" \
-    -x "analysis_pipeline/__pycache__/*" \
-    -x "analysis_pipeline/models/__pycache__/*"
+    -x "pipeline/manuscript_tutorial_archive/*" \
+    -x "pipeline/__pycache__/*" \
+    -x "pipeline/models/__pycache__/*"
 
 echo ""
 echo "Created: $ZIP_NAME ($(du -h "$ZIP_NAME" | cut -f1))"

@@ -166,7 +166,7 @@ def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         If None, generate all figures.
     """
     _style()
-    fig_dir = os.path.join(output_dir, "empirical_paper", "figures")
+    fig_dir = os.path.join(output_dir, "figures", "figures")
     os.makedirs(fig_dir, exist_ok=True)
 
     fmt = "png"
