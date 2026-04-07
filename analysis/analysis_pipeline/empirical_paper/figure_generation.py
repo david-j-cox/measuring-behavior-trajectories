@@ -2,16 +2,15 @@
 'Testing Behavior Dynamic Models to Account for Choice Trajectories
  in Non-Stationary Environments'
 
-Produces 9 primary figures:
+Produces 8 primary figures:
   1. Phase transitions in choice behavior (group rolling P(A))
   2. Model comparison (mean AIC, 14 models by family)
   3. Phase-transition dynamics (adaptation lags at boundaries)
-  4. Adaptation lag distributions by phase
-  5. Hysteresis in choice allocation (choice vs latent advantage)
-  6. HMM state characteristics (choice x ICI state space)
-  7. HMM phase alignment (state bands + phase boundaries)
-  8. Convergent cross-mapping (CCM convergence)
-  9. Recurrence quantification analysis (RQA summary)
+  4. Hysteresis in choice allocation (choice vs latent advantage)
+  5. HMM state characteristics (choice x ICI state space)
+  6. HMM phase alignment (state bands + phase boundaries)
+  7. Convergent cross-mapping (CCM convergence)
+  8. Recurrence quantification analysis (RQA summary)
 """
 
 import os
@@ -25,10 +24,12 @@ import seaborn as sns
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Shared helpers
+# Shared helpers & constants
 # ═══════════════════════════════════════════════════════════════════════════
 
-_PHASE_COLORS = {1: "#999999", 2: "#4393C3", 3: "#D6604D", 4: "#5AAE61"}
+# Grayscale palette for JEAB black-and-white publication
+_PHASE_GRAYS = {1: "#AAAAAA", 2: "#555555", 3: "#888888", 4: "#333333"}
+_PHASE_HATCHES = {1: "", 2: "//", 3: "\\\\", 4: "xx"}
 _PHASE_LABELS = {1: "Symmetric", 2: "A-advantage", 3: "B-advantage",
                  4: "Scarcity + Pulses"}
 
@@ -66,12 +67,40 @@ _MODEL_LABELS = {
     "hmm_4state": "HMM (4-state)",
 }
 
+_FAMILY_GRAYS = {
+    "Baseline": "#CCCCCC",
+    "Historical": "#999999",
+    "RL": "#666666",
+    "HMM": "#333333",
+}
+_FAMILY_HATCHES = {
+    "Baseline": "",
+    "Historical": "//",
+    "RL": "\\\\",
+    "HMM": "xx",
+}
+
+# Font sizes — sized for JEAB publication (figures may be scaled down)
+_LABEL_FS = 26       # axis labels
+_TICK_FS = 14        # tick labels
+_TITLE_FS = 18       # subplot titles
+_CONDITION_FS = 14   # phase/condition annotations (= tick size)
+_LEGEND_FS = 12      # legend text
+_ANNOTATION_FS = 14  # in-plot annotations
+_LABELPAD = 12       # padding between axis and label
+
+# Color palette for Figure 2 (model comparison) where color aids readability
 _FAMILY_COLORS = {
     "Baseline": "#bdbdbd",
     "Historical": "#fdae61",
     "RL": "#abd9e9",
     "HMM": "#2c7bb6",
 }
+
+# HMM state grays + markers for grayscale differentiation
+_STATE_GRAYS = ["#333333", "#999999", "#666666", "#BBBBBB"]
+_STATE_MARKERS = ["o", "s", "^", "D"]
+_STATE_HATCHES = ["", "//", "\\\\", "xx"]
 
 
 def _style():
@@ -81,13 +110,15 @@ def _style():
         "axes.facecolor": "white",
         "savefig.bbox": "tight",
         "font.family": "sans-serif",
+        "xtick.labelsize": _TICK_FS,
+        "ytick.labelsize": _TICK_FS,
     })
 
 
 def _phase_lines(ax, config):
     for pb in config.get("phase_boundaries", []):
         if pb["start_ms"] > 0:
-            ax.axvline(pb["start_ms"] / 1000, color="red", ls="--",
+            ax.axvline(pb["start_ms"] / 1000, color="black", ls="--",
                        alpha=0.6, lw=1.0)
 
 
@@ -125,8 +156,15 @@ def _bootstrap_ci(data_by_bin, n_boot=1000, ci=95, rng=None):
 
 def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
                          analysis_results: dict, config: dict,
-                         output_dir: str):
-    """Generate all 9 empirical paper figures."""
+                         output_dir: str, only: list = None):
+    """Generate empirical paper figures.
+
+    Parameters
+    ----------
+    only : list of int, optional
+        If provided, generate only these figure numbers (e.g. [5, 7]).
+        If None, generate all figures.
+    """
     _style()
     fig_dir = os.path.join(output_dir, "empirical_paper", "figures")
     os.makedirs(fig_dir, exist_ok=True)
@@ -134,18 +172,31 @@ def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     fmt = "png"
     n_boot = config.get("n_bootstrap", 1000)
 
-    figure1_phase_transitions(events_df, fig_dir, fmt, config, n_boot)
-    figure2_model_comparison(analysis_results, fig_dir, fmt, config)
-    figure3_adaptation_lags(events_df, metrics_df, fig_dir, fmt, config)
-    figure4_lag_distributions(events_df, metrics_df, fig_dir, fmt, config)
-    figure5_hysteresis(events_df, fig_dir, fmt, config)
-    figure6_hmm_state_characteristics(analysis_results, fig_dir, fmt, config)
-    figure7_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
-                                config)
-    figure8_ccm(analysis_results, fig_dir, fmt, config)
-    figure9_rqa(analysis_results, events_df, fig_dir, fmt, config)
+    def _run(n):
+        return only is None or n in only
 
-    print(f"  Empirical paper figures saved to {fig_dir}")
+    if _run(1):
+        figure1_phase_transitions(events_df, fig_dir, fmt, config, n_boot)
+    if _run(2):
+        figure2_model_comparison(analysis_results, fig_dir, fmt, config)
+    if _run(3):
+        figure3_adaptation_lags(events_df, metrics_df, fig_dir, fmt, config)
+    if _run(4):
+        figure4_hysteresis(events_df, fig_dir, fmt, config)
+        figure4_hysteresis_supplement(events_df, fig_dir, fmt, config)
+    if _run(5):
+        figure5_hmm_state_characteristics(analysis_results, fig_dir, fmt,
+                                          config)
+    if _run(6):
+        figure6_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
+                                    config)
+    if _run(7):
+        figure7_ccm(analysis_results, fig_dir, fmt, config)
+    if _run(8):
+        figure8_rqa(analysis_results, events_df, fig_dir, fmt, config)
+
+    which = f"figure(s) {only}" if only else "all figures"
+    print(f"  {which} saved to {fig_dir}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -176,8 +227,8 @@ def figure1_phase_transitions(events_df, fig_dir, fmt, config, n_boot):
 
     # Group mean + CI
     x, m, lo, hi = _bootstrap_ci(bins_data, n_boot=n_boot, rng=rng)
-    ax.plot(x, m, color="#2166AC", lw=2.5, zorder=5)
-    ax.fill_between(x, lo, hi, alpha=0.20, color="#2166AC", zorder=4)
+    ax.plot(x, m, color="black", lw=2.5, zorder=5)
+    ax.fill_between(x, lo, hi, alpha=0.20, color="gray", zorder=4)
 
     # Phase boundaries and labels
     _phase_lines(ax, config)
@@ -185,13 +236,14 @@ def figure1_phase_transitions(events_df, fig_dir, fmt, config, n_boot):
         mid = (pb["start_ms"] + pb["end_ms"]) / 2000
         label = _PHASE_LABELS.get(pb["id"], f"Phase {pb['id']}")
         ax.text(mid, 0.97, label, ha="center", va="top",
-                fontsize=8, color=_PHASE_COLORS.get(pb["id"], "gray"),
+                fontsize=_CONDITION_FS, color="black",
                 fontweight="bold", transform=ax.get_xaxis_transform())
 
     ax.axhline(0.5, color="gray", ls=":", alpha=0.3, lw=0.6)
     ax.set_ylim(0, 1)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Rolling P(Choose A)")
+    ax.set_xlabel("Time (s)", fontsize=_LABEL_FS, labelpad=_LABELPAD)
+    ax.set_ylabel("Rolling P(Choose A)", fontsize=_LABEL_FS,
+                  labelpad=_LABELPAD)
     sns.despine(ax=ax)
 
     plt.tight_layout()
@@ -204,7 +256,7 @@ def figure1_phase_transitions(events_df, fig_dir, fmt, config, n_boot):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def figure2_model_comparison(analysis_results, fig_dir, fmt, config):
-    """Mean AIC for all 14 models, organized by family, with broken axis."""
+    """Mean AIC for all 14 models, sorted best (top) to worst (bottom)."""
     mc = analysis_results.get("model_comparison")
     if mc is None or len(mc) == 0:
         print("  Figure 2 skipped: no model comparison results.")
@@ -224,53 +276,46 @@ def figure2_model_comparison(analysis_results, fig_dir, fmt, config):
            .reset_index()
            .sort_values("mean"))
 
-    # Broken y-axis: HMMs have negative AIC far from process models
-    fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=(8, 7), sharex=True,
-        gridspec_kw={"height_ratios": [1, 2], "hspace": 0.08})
+    # Build label order mapping for swarmplot alignment
+    label_order = list(agg["label"].values)
 
-    for ax in (ax_top, ax_bot):
-        bars = ax.barh(
-            range(len(agg)), agg["mean"].values, xerr=agg["sem"].values,
-            color=[_FAMILY_COLORS.get(f, "gray") for f in agg["family"]],
-            edgecolor="white", height=0.7, capsize=3)
-        ax.set_yticks(range(len(agg)))
-        ax.set_yticklabels(agg["label"].values, fontsize=9)
+    # Single axis, sorted best (top) to worst (bottom)
+    fig, ax = plt.subplots(figsize=(10, 7))
 
-    # Set axis limits for the break
-    hmm_min = agg[agg["family"] == "HMM"]["mean"].min()
-    hmm_max = agg[agg["family"] == "HMM"]["mean"].max()
-    process_min = agg[agg["family"] != "HMM"]["mean"].min()
-    process_max = agg[agg["family"] != "HMM"]["mean"].max()
+    y_pos = range(len(agg))
+    bars = ax.barh(
+        y_pos, agg["mean"].values, xerr=agg["sem"].values,
+        color=[_FAMILY_COLORS.get(f, "gray") for f in agg["family"]],
+        edgecolor="white", height=0.7, capsize=3,
+        error_kw={"lw": 1.2, "capthick": 1.2})
 
-    if hmm_min < 0:
-        ax_top.set_xlim(process_min - 100, process_max + 100)
-        ax_bot.set_xlim(hmm_min - 500, hmm_max + 500)
-    else:
-        # No break needed if all positive
-        ax_top.set_xlim(agg["mean"].min() - 100, agg["mean"].max() + 100)
-        ax_bot.set_xlim(agg["mean"].min() - 100, agg["mean"].max() + 100)
+    # Overlay individual-participant AIC values
+    for idx, row in agg.iterrows():
+        model_label = row["label"]
+        y = label_order.index(model_label)
+        indiv_aic = mc.loc[mc["label"] == model_label, "aic"].values
+        if len(indiv_aic) > 0:
+            jitter = np.random.default_rng(y).uniform(
+                -0.25, 0.25, len(indiv_aic))
+            ax.scatter(indiv_aic, y + jitter, s=8, alpha=0.4,
+                       color="black", edgecolors="none", zorder=4)
 
-    ax_top.spines["bottom"].set_visible(False)
-    ax_bot.spines["top"].set_visible(False)
-    ax_top.tick_params(bottom=False)
-
-    # Break indicators
-    d = 0.015
-    kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, lw=1)
-    ax_top.plot((-d, +d), (-d, +d), **kwargs)
-    ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
-    kwargs["transform"] = ax_bot.transAxes
-    ax_bot.plot((-d, +d), (1 - d, 1 + d), **kwargs)
-    ax_bot.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
-
-    ax_bot.set_xlabel("Mean AIC (lower = better fit)")
+    ax.set_yticks(list(y_pos))
+    ax.set_yticklabels(agg["label"].values, fontsize=_TICK_FS)
+    ax.set_xscale("symlog", linthresh=100)
+    ax.set_xlabel("Mean AIC (lower = better fit)", fontsize=_LABEL_FS,
+                  labelpad=_LABELPAD)
+    sns.despine(ax=ax, right=True, top=True)
 
     # Family legend
-    handles = [mpatches.Patch(color=c, label=f)
-               for f, c in _FAMILY_COLORS.items()]
-    ax_top.legend(handles=handles, loc="upper right", fontsize=8,
-                  frameon=True, edgecolor="lightgray")
+    handles = [mpatches.Patch(facecolor=_FAMILY_COLORS[f],
+                              edgecolor="gray", label=f)
+               for f in _FAMILY_COLORS]
+    handles.append(Line2D([0], [0], marker="o", color="none",
+                          markerfacecolor="black", markersize=4,
+                          alpha=0.5, label="Individual"))
+    ax.legend(handles=handles, loc="lower right", fontsize=_LEGEND_FS,
+              frameon=True, edgecolor="lightgray")
 
     plt.tight_layout()
     _save(fig, os.path.join(fig_dir, f"figure2_model_comparison.{fmt}"),
@@ -301,7 +346,7 @@ def figure3_adaptation_lags(events_df, metrics_df, fig_dir, fmt, config):
         })
 
     fig, axes = plt.subplots(1, len(transitions),
-                             figsize=(4.5 * len(transitions), 4),
+                             figsize=(4.5 * len(transitions), 6),
                              sharey=True)
     if len(transitions) == 1:
         axes = [axes]
@@ -335,28 +380,25 @@ def figure3_adaptation_lags(events_df, metrics_df, fig_dir, fmt, config):
 
         if lags:
             lags = np.array(lags)
+            gray = _PHASE_GRAYS.get(tr["to"], "#888888")
             parts = ax.violinplot([lags], positions=[0], showmeans=True,
                                   showextrema=False)
             for pc in parts["bodies"]:
-                pc.set_facecolor(_PHASE_COLORS.get(tr["to"], "steelblue"))
+                pc.set_facecolor(gray)
                 pc.set_alpha(0.6)
             parts["cmeans"].set_color("black")
 
             # Overlay individual points
             jitter = np.random.default_rng(col).uniform(-0.15, 0.15,
                                                          len(lags))
-            ax.scatter(jitter, lags, s=20, alpha=0.5,
-                       color=_PHASE_COLORS.get(tr["to"], "steelblue"),
+            ax.scatter(jitter, lags, s=20, alpha=0.5, color=gray,
                        edgecolors="white", linewidth=0.5, zorder=3)
 
-            ax.text(0, ax.get_ylim()[1] * 0.95,
-                    f"M = {np.mean(lags):.1f}s\nMd = {np.median(lags):.1f}s",
-                    ha="center", va="top", fontsize=8)
-
-        ax.set_title(tr["label"], fontsize=9, fontweight="bold")
+        ax.set_title(tr["label"], fontsize=_TITLE_FS, fontweight="bold")
         ax.set_xticks([])
         if col == 0:
-            ax.set_ylabel("Adaptation Lag (s)")
+            ax.set_ylabel("Adaptation Lag (s)", fontsize=_LABEL_FS + 4,
+                          labelpad=_LABELPAD)
         sns.despine(ax=ax, bottom=True)
 
     plt.tight_layout()
@@ -414,19 +456,21 @@ def figure4_lag_distributions(events_df, metrics_df, fig_dir, fmt, config):
     if n_trans == 1:
         axes = [axes]
 
-    colors = ["#999999", "#4393C3", "#D6604D", "#5AAE61"]
+    phase_ids = [pbs[i]["id"] for i in range(1, len(pbs))]
     for idx, (label, lags) in enumerate(transition_lags.items()):
         ax = axes[idx]
+        pid = phase_ids[idx] if idx < len(phase_ids) else 1
         if len(lags) > 0:
-            ax.hist(lags, bins=12, color=colors[idx % len(colors)],
-                    edgecolor="white", alpha=0.8)
+            ax.hist(lags, bins=12, color="black", edgecolor="white",
+                    alpha=0.8)
             ax.axvline(np.median(lags), color="black", ls="--", lw=1.5,
                        label=f"Median = {np.median(lags):.1f}s")
-            ax.legend(fontsize=7)
-        ax.set_title(label, fontsize=10, fontweight="bold")
-        ax.set_xlabel("Adaptation Lag (s)")
+            ax.legend(fontsize=_LEGEND_FS)
+        ax.set_title(label, fontsize=_TITLE_FS, fontweight="bold")
+        ax.set_xlabel("Adaptation Lag (s)", fontsize=_TICK_FS,
+                      labelpad=_LABELPAD)
         if idx == 0:
-            ax.set_ylabel("Count")
+            ax.set_ylabel("Count", fontsize=_LABEL_FS, labelpad=_LABELPAD)
         sns.despine(ax=ax)
 
     plt.tight_layout()
@@ -435,109 +479,424 @@ def figure4_lag_distributions(events_df, metrics_df, fig_dir, fmt, config):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 5 – Hysteresis in Choice Allocation
+# Figure 4 – Hysteresis in Choice Allocation
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure5_hysteresis(events_df, fig_dir, fmt, config):
-    """Choice proportion vs latent advantage, showing path dependence."""
+def figure4_hysteresis(events_df, fig_dir, fmt, config):
+    """Continuous trajectory through all phases showing hysteresis loops.
+
+    Two subplots:
+      A. x = latent advantage (V_A - V_B)
+      B. x = local reward-rate difference (R_A - R_B)
+    The trajectory is binned by time, producing a continuous path with
+    arrows showing temporal direction. If equilibrium-seeking models are
+    correct, overlapping x-regions should produce identical y-values
+    regardless of phase; vertical separation at the same x indicates
+    path dependence (hysteresis).
+    """
     pbs = config.get("phase_boundaries", [])
-    if len(pbs) < 3:
+    if len(pbs) < 2:
         return
 
-    # Phase 2: A advantage rising; Phase 3: B advantage (A falling)
-    phase2_start = pbs[1]["start_ms"] / 1000
-    phase2_end = pbs[1]["end_ms"] / 1000
-    phase3_start = pbs[2]["start_ms"] / 1000
-    phase3_end = pbs[2]["end_ms"] / 1000
+    bin_width = 10   # seconds
+    rolling = True   # True = rolling window, False = non-overlapping bins
+    bin_step = 1     # step size in seconds for rolling window
 
-    bin_width = 3  # seconds
+    x_specs = [
+        {
+            "col": "latent_advantage_pre",
+            "xlabel": "$V_A - V_B$",
+            "title": "A. Latent Value",
+        },
+        {
+            "col_a": "local_reward_rate_a",
+            "col_b": "local_reward_rate_b",
+            "xlabel": "$R_A - R_B$",
+            "title": "B. Local Reinforcement Rate",
+        },
+    ]
 
-    fig, ax = plt.subplots(figsize=(7, 5.5))
+    # Colored phase styles with arrow-line rendering
+    _phase_styles = {
+        1: {"color": "#999999", "label": "Phase 1 (Symmetric)"},
+        2: {"color": "#4393C3", "label": "Phase 2 (A rising)"},
+        3: {"color": "#D6604D", "label": "Phase 3 (B rising)"},
+        4: {"color": "#5AAE61", "label": "Phase 4 (Scarcity)"},
+    }
 
-    # Collect per-bin data across sessions
-    phase2_bins = {}
-    phase3_bins = {}
+    # Right-column specs: normalized relative to the advantaged option
+    x_specs_norm = [
+        {"col": "latent_advantage_pre",
+         "xlabel": "$V_{Higher} - V_{Lower}$",
+         "title": "C. Latent Value (Normalized)"},
+        {"col_a": "local_reward_rate_a", "col_b": "local_reward_rate_b",
+         "xlabel": "$R_{Higher} - R_{Lower}$",
+         "title": "D. Local Reinforcement Rate (Normalized)"},
+    ]
 
-    for sid, sdf in events_df.groupby("session_id"):
-        sdf = sdf.sort_values("timestamp_ms")
+    fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+    fig.subplots_adjust(hspace=0.2)
+
+    # --- Helper to compute time-binned trajectories for one phase ---
+    def _phase_trajectory(sdf, spec, t_start, t_end, normalize_phase=None):
+        """Return (mean_x, mean_y) arrays for one session-phase.
+
+        If normalize_phase is set (2 or 3), flip axes so that:
+          x = advantage for the higher-payout option (always positive)
+          y = P(choose higher-payout option)
+        Phase 2: A is higher → no flip needed
+        Phase 3: B is higher → flip both
+        """
         if "rolling_choice_prop_a_clicks" not in sdf.columns:
-            continue
+            return None, None
 
-        # Phase 2
-        p2 = sdf[(sdf["elapsed_time_s"] >= phase2_start) &
-                  (sdf["elapsed_time_s"] < phase2_end)].copy()
-        if len(p2) > 5:
-            p2["tb"] = ((p2["elapsed_time_s"] - phase2_start) // bin_width
-                        ).astype(int)
-            for tb, grp in p2.groupby("tb"):
-                # Normalize time bin to [0, 1] range within phase
-                norm_t = tb * bin_width / (phase2_end - phase2_start)
-                phase2_bins.setdefault(tb, []).append(
-                    grp["rolling_choice_prop_a_clicks"].mean())
+        if "col" in spec:
+            if spec["col"] not in sdf.columns:
+                return None, None
+            adv = sdf[spec["col"]]
+        else:
+            if (spec["col_a"] not in sdf.columns or
+                    spec["col_b"] not in sdf.columns):
+                return None, None
+            adv = sdf[spec["col_a"]] - sdf[spec["col_b"]]
 
-        # Phase 3
-        p3 = sdf[(sdf["elapsed_time_s"] >= phase3_start) &
-                  (sdf["elapsed_time_s"] < phase3_end)].copy()
-        if len(p3) > 5:
-            p3["tb"] = ((p3["elapsed_time_s"] - phase3_start) // bin_width
-                        ).astype(int)
-            for tb, grp in p3.groupby("tb"):
-                phase3_bins.setdefault(tb, []).append(
-                    grp["rolling_choice_prop_a_clicks"].mean())
+        choice = sdf["rolling_choice_prop_a_clicks"]
+        mask = ((sdf["elapsed_time_s"] >= t_start) &
+                (sdf["elapsed_time_s"] < t_end) &
+                adv.notna() & choice.notna())
+        phase_df = sdf[mask]
+        if len(phase_df) < 5:
+            return None, None
 
-    # Compute latent advantage proxy (time within phase as proxy)
-    # Phase 2: advantage grows from 0 to max; Phase 3: advantage reverses
-    if phase2_bins and phase3_bins:
-        max_bin = max(max(phase2_bins.keys()), max(phase3_bins.keys()))
+        phase_df = phase_df.copy()
+        elapsed = phase_df["elapsed_time_s"].values
 
-        # Phase 2: A-advantage increasing (plot left to right)
-        p2_t = sorted(phase2_bins.keys())
-        p2_advantage = [b * bin_width / (phase2_end - phase2_start)
-                        for b in p2_t]
-        p2_choice = [np.mean(phase2_bins[b]) for b in p2_t]
+        adv_vals = adv.copy()
+        choice_vals = choice.copy()
 
-        # Phase 3: A-advantage decreasing (B takes over)
-        p3_t = sorted(phase3_bins.keys())
-        # Reverse the x-axis for phase 3 to show returning path
-        p3_advantage = [1.0 - b * bin_width / (phase3_end - phase3_start)
-                        for b in p3_t]
-        p3_choice = [np.mean(phase3_bins[b]) for b in p3_t]
+        # Normalize: flip so x = higher - lower, y = P(choose higher)
+        if normalize_phase == 3:
+            adv_vals = -adv_vals          # B is higher, so flip sign
+            choice_vals = 1 - choice_vals  # P(choose B) = 1 - P(choose A)
 
-        ax.plot(p2_advantage, p2_choice, "o-", color="#4393C3", lw=2,
-                markersize=5, label="Phase 2 (A rising)", zorder=5)
-        ax.plot(p3_advantage, p3_choice, "s-", color="#D6604D", lw=2,
-                markersize=5, label="Phase 3 (B rising)", zorder=5)
+        adv_arr = adv_vals.loc[phase_df.index].values
+        choice_arr = choice_vals.loc[phase_df.index].values
 
-        # Arrows to show direction
-        if len(p2_advantage) > 2:
-            mid = len(p2_advantage) // 2
-            ax.annotate("", xy=(p2_advantage[mid+1], p2_choice[mid+1]),
-                        xytext=(p2_advantage[mid], p2_choice[mid]),
-                        arrowprops=dict(arrowstyle="->", color="#4393C3",
-                                        lw=2))
-        if len(p3_advantage) > 2:
-            mid = len(p3_advantage) // 2
-            ax.annotate("", xy=(p3_advantage[mid+1], p3_choice[mid+1]),
-                        xytext=(p3_advantage[mid], p3_choice[mid]),
-                        arrowprops=dict(arrowstyle="->", color="#D6604D",
-                                        lw=2))
+        bin_x, bin_y = {}, {}
+        if rolling:
+            # Rolling window: step through by bin_step
+            t_min, t_max = elapsed.min(), elapsed.max()
+            tb_idx = 0
+            t = t_min
+            while t + bin_width <= t_max:
+                mask = (elapsed >= t) & (elapsed < t + bin_width)
+                if mask.sum() >= 3:
+                    bin_x.setdefault(tb_idx, []).append(
+                        np.mean(adv_arr[mask]))
+                    bin_y.setdefault(tb_idx, []).append(
+                        np.mean(choice_arr[mask]))
+                tb_idx += 1
+                t += bin_step
+        else:
+            # Non-overlapping bins
+            phase_df["tb"] = (
+                (elapsed - t_start) // bin_width
+            ).astype(int)
+            for tb, grp in phase_df.groupby("tb"):
+                idx_in_arr = np.isin(elapsed,
+                    grp["elapsed_time_s"].values)
+                bin_x.setdefault(tb, []).append(np.mean(adv_arr[idx_in_arr]))
+                bin_y.setdefault(tb, []).append(
+                    np.mean(choice_arr[idx_in_arr]))
 
-    ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
-    ax.set_xlabel("Relative Advantage for Option A")
-    ax.set_ylabel("P(Choose A)")
-    ax.set_ylim(0, 1)
-    ax.legend(fontsize=9)
-    sns.despine(ax=ax)
+        return bin_x, bin_y
+
+    # --- Left column: raw trajectories (all 4 phases) ---
+    for row_idx, spec in enumerate(x_specs):
+        ax = axes[row_idx, 0]
+        for pb in pbs:
+            pid = pb["id"]
+            t_start = pb["start_ms"] / 1000
+            t_end = pb["end_ms"] / 1000
+            style = _phase_styles[pid]
+
+            agg_x, agg_y = {}, {}
+            for sid, sdf in events_df.groupby("session_id"):
+                sdf = sdf.sort_values("timestamp_ms")
+                bx, by = _phase_trajectory(sdf, spec, t_start, t_end)
+                if bx is None:
+                    continue
+                for tb in bx:
+                    agg_x.setdefault(tb, []).extend(bx[tb])
+                    agg_y.setdefault(tb, []).extend(by[tb])
+
+            if not agg_x:
+                continue
+            tbs = sorted(agg_x.keys())
+            mx = np.array([np.mean(agg_x[t]) for t in tbs])
+            my = np.array([np.mean(agg_y[t]) for t in tbs])
+
+            dx = mx[1:] - mx[:-1]
+            dy = my[1:] - my[:-1]
+            ax.quiver(mx[:-1], my[:-1], dx, dy,
+                      angles="xy", scale_units="xy", scale=1,
+                      color=style["color"], alpha=0.3, width=0.005,
+                      headwidth=5, headlength=4, headaxislength=3,
+                      zorder=5, label=style["label"])
+
+        ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
+        ax.axvline(0.0, color="gray", ls=":", alpha=0.3)
+        ax.set_xlabel(spec["xlabel"], fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.set_ylabel("P(Choose A)", fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.set_ylim(0, 1)
+        ax.set_title(spec["title"], fontsize=_TITLE_FS, fontweight="bold",
+                     loc="left")
+        ax.legend(fontsize=_LEGEND_FS, loc="best")
+        sns.despine(ax=ax)
+
+    # --- Right column: normalized (Phase 2 & 3 only) ---
+    for row_idx, spec in enumerate(x_specs_norm):
+        ax = axes[row_idx, 1]
+        base_spec = x_specs[row_idx]  # use same data columns
+
+        for pid in (2, 3):
+            pb = pbs[pid - 1]
+            t_start = pb["start_ms"] / 1000
+            t_end = pb["end_ms"] / 1000
+            style = _phase_styles[pid]
+
+            agg_x, agg_y = {}, {}
+            for sid, sdf in events_df.groupby("session_id"):
+                sdf = sdf.sort_values("timestamp_ms")
+                bx, by = _phase_trajectory(sdf, base_spec, t_start, t_end,
+                                           normalize_phase=pid)
+                if bx is None:
+                    continue
+                for tb in bx:
+                    agg_x.setdefault(tb, []).extend(bx[tb])
+                    agg_y.setdefault(tb, []).extend(by[tb])
+
+            if not agg_x:
+                continue
+            tbs = sorted(agg_x.keys())
+            mx = np.array([np.mean(agg_x[t]) for t in tbs])
+            my = np.array([np.mean(agg_y[t]) for t in tbs])
+
+            dx = mx[1:] - mx[:-1]
+            dy = my[1:] - my[:-1]
+            ax.quiver(mx[:-1], my[:-1], dx, dy,
+                      angles="xy", scale_units="xy", scale=1,
+                      color=style["color"], alpha=0.3, width=0.005,
+                      headwidth=5, headlength=4, headaxislength=3,
+                      zorder=5, label=style["label"])
+
+        ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
+        ax.axvline(0.0, color="gray", ls=":", alpha=0.3)
+        ax.set_xlabel(spec["xlabel"], fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.set_ylabel("P(Choose Higher-Payout)", fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.set_ylim(0, 1)
+        ax.set_title(spec["title"], fontsize=_TITLE_FS, fontweight="bold",
+                     loc="left")
+        ax.legend(fontsize=_LEGEND_FS, loc="best")
+        sns.despine(ax=ax)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure5_hysteresis.{fmt}"), config)
+    fig.subplots_adjust(hspace=0.35, wspace=0.3)
+    _save(fig, os.path.join(fig_dir, f"figure4_hysteresis.{fmt}"), config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 6 – HMM State Characteristics
+# Figure 4 Supplement – Individual Participant Hysteresis
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure6_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
+def figure4_hysteresis_supplement(events_df, fig_dir, fmt, config):
+    """Individual participant hysteresis trajectories.
+
+    6 figures, each with 5 rows x 4 cols (2 participants per row,
+    latent value + reward rate for each).
+    """
+    pbs = config.get("phase_boundaries", [])
+    if len(pbs) < 2:
+        return
+
+    bin_width = 10
+    bin_step = 1  # rolling window step
+
+    _phase_styles = {
+        1: {"color": "#999999", "label": "Ph 1"},
+        2: {"color": "#4393C3", "label": "Ph 2"},
+        3: {"color": "#D6604D", "label": "Ph 3"},
+        4: {"color": "#5AAE61", "label": "Ph 4"},
+    }
+
+    x_specs = [
+        {"col": "latent_advantage_pre",
+         "xlabel": "$V_A - V_B$"},
+        {"col_a": "local_reward_rate_a", "col_b": "local_reward_rate_b",
+         "xlabel": "$R_A - R_B$"},
+    ]
+
+    sids = sorted(events_df["session_id"].unique())
+    rows_per_fig = 5
+    n_figs = int(np.ceil(len(sids) / rows_per_fig))
+
+    # Column specs: raw latent, raw reward, normalized latent, normalized reward
+    col_specs = [
+        {"base": x_specs[0], "normalize": False,
+         "xlabel": "$V_A - V_B$", "ylabel": "P(A)"},
+        {"base": x_specs[1], "normalize": False,
+         "xlabel": "$R_A - R_B$", "ylabel": "P(A)"},
+        {"base": x_specs[0], "normalize": True,
+         "xlabel": "$V_{Higher} - V_{Lower}$", "ylabel": "P(Higher)"},
+        {"base": x_specs[1], "normalize": True,
+         "xlabel": "$R_{Higher} - R_{Lower}$", "ylabel": "P(Higher)"},
+    ]
+
+    supp_dir = os.path.join(fig_dir, "supplements")
+    os.makedirs(supp_dir, exist_ok=True)
+
+    for fig_idx in range(n_figs):
+        start = fig_idx * rows_per_fig
+        end = min(start + rows_per_fig, len(sids))
+        batch_sids = sids[start:end]
+        n_rows = len(batch_sids)
+
+        fig, axes = plt.subplots(n_rows, 4, figsize=(18, 4 * n_rows))
+        if n_rows == 1:
+            axes = axes[np.newaxis, :]
+
+        for row, sid in enumerate(batch_sids):
+            sdf = events_df[events_df["session_id"] == sid].sort_values(
+                "timestamp_ms")
+            if "rolling_choice_prop_a_clicks" not in sdf.columns:
+                continue
+
+            for col_idx, cspec in enumerate(col_specs):
+                ax = axes[row, col_idx]
+                base = cspec["base"]
+                normalize = cspec["normalize"]
+
+                # Which phases to plot
+                phases_to_plot = [2, 3] if normalize else list(range(1, 5))
+
+                for phase_id in phases_to_plot:
+                    pb = pbs[phase_id - 1]
+                    t_start = pb["start_ms"] / 1000
+                    t_end = pb["end_ms"] / 1000
+                    style = _phase_styles.get(phase_id, _phase_styles[1])
+
+                    # Compute advantage
+                    if "col" in base:
+                        if base["col"] not in sdf.columns:
+                            continue
+                        adv = sdf[base["col"]].copy()
+                    else:
+                        if (base["col_a"] not in sdf.columns or
+                                base["col_b"] not in sdf.columns):
+                            continue
+                        adv = (sdf[base["col_a"]] - sdf[base["col_b"]]).copy()
+
+                    choice = sdf["rolling_choice_prop_a_clicks"].copy()
+
+                    mask = ((sdf["elapsed_time_s"] >= t_start) &
+                            (sdf["elapsed_time_s"] < t_end) &
+                            adv.notna() & choice.notna())
+                    phase_df = sdf[mask]
+                    if len(phase_df) < 5:
+                        continue
+
+                    # Normalize for Phase 3: flip so x = higher-lower,
+                    # y = P(choose higher)
+                    adv_plot = adv.loc[phase_df.index]
+                    choice_plot = choice.loc[phase_df.index]
+                    if normalize and phase_id == 3:
+                        adv_plot = -adv_plot
+                        choice_plot = 1 - choice_plot
+
+                    elapsed = phase_df["elapsed_time_s"].values
+                    adv_arr = adv_plot.values
+                    choice_arr = choice_plot.values
+
+                    tb_x, tb_y = [], []
+                    t = elapsed.min()
+                    t_max = elapsed.max()
+                    while t + bin_width <= t_max:
+                        wmask = (elapsed >= t) & (elapsed < t + bin_width)
+                        if wmask.sum() >= 3:
+                            tb_x.append(np.mean(adv_arr[wmask]))
+                            tb_y.append(np.mean(choice_arr[wmask]))
+                        t += bin_step
+
+                    mean_x = np.array(tb_x)
+                    mean_y = np.array(tb_y)
+                    if len(mean_x) < 2:
+                        continue
+
+                    dx = mean_x[1:] - mean_x[:-1]
+                    dy = mean_y[1:] - mean_y[:-1]
+                    ax.quiver(mean_x[:-1], mean_y[:-1], dx, dy,
+                              angles="xy", scale_units="xy", scale=1,
+                              color=style["color"], alpha=0.3,
+                              width=0.006, headwidth=4, headlength=3,
+                              headaxislength=2.5)
+
+                ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
+                ax.axvline(0.0, color="gray", ls=":", alpha=0.3)
+                ax.set_ylim(0, 1)
+                ax.tick_params(labelsize=8)
+                sns.despine(ax=ax)
+
+                # Bottom row gets x-labels
+                if row == n_rows - 1:
+                    ax.set_xlabel(cspec["xlabel"], fontsize=12)
+                # Left-most raw and normalized columns get y-labels
+                if col_idx == 0:
+                    ax.set_ylabel(cspec["ylabel"], fontsize=12)
+                elif col_idx == 2:
+                    ax.set_ylabel(cspec["ylabel"], fontsize=12)
+
+                # Participant ID on first column only
+                if col_idx == 0:
+                    short_id = (f"{sid[:14]}..." if len(str(sid)) > 14
+                                else sid)
+                    ax.set_title(short_id, fontsize=9, loc="left")
+
+        # Column headers on top row
+        col_headers = ["Raw: Latent Value", "Raw: Reinforcement Rate",
+                       "Normalized: Latent Value", "Normalized: Reinforcement Rate"]
+        for c, header in enumerate(col_headers):
+            axes[0, c].text(0.5, 1.15, header, transform=axes[0, c].transAxes,
+                            ha="center", fontsize=11, fontweight="bold")
+
+        # Legend on first subplot
+        handles = [mpatches.Patch(color=s["color"], alpha=0.5,
+                                  label=s["label"])
+                   for s in _phase_styles.values()]
+        axes[0, 0].legend(handles=handles, fontsize=7, loc="best")
+        # Normalized legend (Phase 2 & 3 only)
+        norm_handles = [mpatches.Patch(color=_phase_styles[p]["color"],
+                                       alpha=0.5,
+                                       label=_phase_styles[p]["label"])
+                        for p in (2, 3)]
+        axes[0, 2].legend(handles=norm_handles, fontsize=7, loc="best")
+
+        plt.tight_layout()
+        fig.subplots_adjust(top=0.95)
+        _save(fig, os.path.join(supp_dir,
+              f"figure4_supp_{fig_idx + 1}.{fmt}"), config)
+
+    print(f"  Hysteresis supplements ({n_figs} pages) saved to {supp_dir}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 5 – HMM State Characteristics
+# ═══════════════════════════════════════════════════════════════════════════
+
+def figure5_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
     """State-space scatter of HMM states in choice x ICI space."""
     hmm_seqs = analysis_results.get("hmm_state_sequences", {})
     hmm_summary = analysis_results.get("hmm_state_summary")
@@ -546,79 +905,90 @@ def figure6_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
         print("  Figure 6 skipped: no HMM results.")
         return
 
-    state_colors = ["#4393C3", "#D6604D", "#5AAE61", "#984EA3"]
-    state_labels_map = {0: "Exploiting B", 1: "Exploring/Switching",
-                        2: "Exploiting A", 3: "Moderate Bias"}
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(2, 1, figsize=(8, 10))
+    fig.subplots_adjust(hspace=0.3)
 
     # (A) Scatter plot of mean_choice_a vs mean_reward by state label
     ax = axes[0]
     if hmm_summary is not None and len(hmm_summary) > 0:
         per_session = hmm_summary[hmm_summary["session_id"] != "GROUP_MEAN"]
-        for label_name in per_session["label"].unique():
+        for i, label_name in enumerate(
+                sorted(per_session["label"].unique())):
             subset = per_session[per_session["label"] == label_name]
-            color_idx = (0 if "B" in label_name else
-                         2 if "A" in label_name else 1)
             ax.scatter(subset["mean_choice_a"], subset["mean_reward"],
                        s=30, alpha=0.5,
-                       color=state_colors[color_idx % len(state_colors)],
+                       color=_STATE_GRAYS[i % len(_STATE_GRAYS)],
+                       marker=_STATE_MARKERS[i % len(_STATE_MARKERS)],
                        label=label_name, edgecolors="white", linewidth=0.5)
 
-        ax.set_xlabel("Mean P(Choose A)")
-        ax.set_ylabel("Mean Reward Rate")
-        ax.legend(fontsize=8)
+        ax.set_xlabel("Mean P(Choose A)", fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.set_ylabel("Mean Reinforcement Rate", fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.legend(fontsize=_LEGEND_FS, loc="center left",
+                  bbox_to_anchor=(1.05, 0.4), borderaxespad=0)
     sns.despine(ax=ax)
-    ax.set_title("A. HMM States in Choice \u00d7 Reward Space",
-                 fontsize=10, fontweight="bold", loc="left")
+    ax.set_title("A. HMM States in\nChoice \u00d7 Reinforcement Space",
+                 fontsize=_TITLE_FS, fontweight="bold", loc="left")
 
-    # (B) Group-average emission means per state label
+    # (B) Group-average emission means per state label with 95% CI
     ax = axes[1]
     if hmm_summary is not None and len(hmm_summary) > 0:
-        group_rows = hmm_summary[hmm_summary["session_id"] == "GROUP_MEAN"]
-        if len(group_rows) > 0:
-            labels = group_rows["label"].values
-            choice_means = group_rows["mean_choice_a"].values
-            x = np.arange(len(labels))
-            bar_colors = []
-            for lbl in labels:
-                if "B" in lbl:
-                    bar_colors.append(state_colors[0])
-                elif "A" in lbl:
-                    bar_colors.append(state_colors[2])
-                else:
-                    bar_colors.append(state_colors[1])
+        per_session = hmm_summary[hmm_summary["session_id"] != "GROUP_MEAN"]
+        state_labels = sorted(per_session["label"].unique())
+        x = np.arange(len(state_labels))
+        means, cis = [], []
+        for lbl in state_labels:
+            vals = per_session.loc[per_session["label"] == lbl,
+                                   "mean_choice_a"].dropna().values
+            means.append(np.mean(vals))
+            sem = np.std(vals, ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
+            cis.append(1.96 * sem)
 
-            ax.bar(x, choice_means, color=bar_colors, edgecolor="white",
-                   width=0.6)
-            ax.set_xticks(x)
-            ax.set_xticklabels(labels, fontsize=8, rotation=15, ha="right")
-            ax.set_ylabel("Mean P(Choose A)")
-            ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
+        ax.bar(x, means, yerr=cis, color="white", edgecolor="black",
+               width=0.6, capsize=4, error_kw={"lw": 1.2, "capthick": 1.2})
+
+        # Overlay individual participant values
+        for i, lbl in enumerate(state_labels):
+            vals = per_session.loc[per_session["label"] == lbl,
+                                   "mean_choice_a"].dropna().values
+            jitter = np.random.default_rng(i).uniform(
+                -0.2, 0.2, len(vals))
+            ax.scatter(x[i] + jitter, vals, s=10, alpha=0.4,
+                       color="black", edgecolors="none", zorder=4)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(state_labels, fontsize=_TICK_FS, rotation=15,
+                           ha="right")
+        ax.set_ylabel("Mean P(Choose A)", fontsize=_LABEL_FS,
+                      labelpad=_LABELPAD)
+        ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
     ax.set_title("B. Group-Average State Profiles",
-                 fontsize=10, fontweight="bold", loc="left")
+                 fontsize=_TITLE_FS, fontweight="bold", loc="left")
     sns.despine(ax=ax)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure6_hmm_states.{fmt}"), config)
+    _save(fig, os.path.join(fig_dir, f"figure5_hmm_states.{fmt}"), config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 7 – HMM Phase Alignment
+# Figure 6 – HMM Phase Alignment
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure7_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
+def figure6_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
                                 config):
     """State assignments as colored bands aligned with phase boundaries."""
     hmm_seqs = analysis_results.get("hmm_state_sequences", {})
     if not hmm_seqs:
-        print("  Figure 7 skipped: no HMM state sequences.")
+        print("  Figure 6 skipped: no HMM state sequences.")
         return
 
-    state_colors = ["#4393C3", "#D6604D", "#5AAE61", "#984EA3"]
+    # State colors for background bands
+    _state_colors = ["#4393C3", "#D6604D", "#5AAE61", "#984EA3"]
+
     sids = list(hmm_seqs.keys())
 
-    # Show up to 6 representative sessions
+    # Show 6 representative sessions in main figure
     n_show = min(6, len(sids))
     step = max(1, len(sids) // n_show)
     show_sids = sids[::step][:n_show]
@@ -628,207 +998,414 @@ def figure7_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
     if n_show == 1:
         axes = [axes]
 
-    for i, sid in enumerate(show_sids):
+    _plot_hmm_panels(axes, show_sids, hmm_seqs, events_df, config,
+                     _state_colors)
+
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure6_hmm_phase_alignment.{fmt}"),
+          config)
+
+    # --- Supplemental: all participants, 6 per page ---
+    supp_dir = os.path.join(fig_dir, "supplements")
+    os.makedirs(supp_dir, exist_ok=True)
+    all_sids = sorted(hmm_seqs.keys())
+    rows_per_fig = 6
+    n_figs = int(np.ceil(len(all_sids) / rows_per_fig))
+
+    for fig_idx in range(n_figs):
+        start = fig_idx * rows_per_fig
+        end = min(start + rows_per_fig, len(all_sids))
+        batch = all_sids[start:end]
+        n_rows = len(batch)
+
+        sfig, saxes = plt.subplots(n_rows, 1, figsize=(10, 2.5 * n_rows),
+                                   sharex=True)
+        if n_rows == 1:
+            saxes = [saxes]
+
+        _plot_hmm_panels(saxes, batch, hmm_seqs, events_df, config,
+                         _state_colors)
+
+        plt.tight_layout()
+        _save(sfig, os.path.join(supp_dir,
+              f"figure6_supp_{fig_idx + 1}.{fmt}"), config)
+
+    print(f"  HMM alignment supplements ({n_figs} pages) saved to {supp_dir}")
+
+
+def _plot_hmm_panels(axes, sids, hmm_seqs, events_df, config, state_colors):
+    """Shared plotting logic for HMM phase alignment panels."""
+    for i, sid in enumerate(sids):
         ax = axes[i]
         sdf = events_df[events_df["session_id"] == sid].sort_values(
             "timestamp_ms")
         seq = hmm_seqs[sid]
         states = seq["states"]
-        n_states = seq["n_states"]
 
         times = sdf["elapsed_time_s"].values[:len(states)]
+
+        # Color background bands by HMM state
+        for t_idx in range(len(times) - 1):
+            s = states[t_idx]
+            ax.axvspan(times[t_idx], times[t_idx + 1],
+                       color=state_colors[s % len(state_colors)],
+                       alpha=0.20, linewidth=0)
 
         # Plot rolling choice proportion
         if "rolling_choice_prop_a_clicks" in sdf.columns:
             signal = sdf["rolling_choice_prop_a_clicks"].values[:len(states)]
             ax.plot(times, signal, color="black", lw=0.8, alpha=0.6)
 
-        # Color background by state
-        for t_idx in range(len(times) - 1):
-            s = states[t_idx]
-            ax.axvspan(times[t_idx], times[t_idx + 1],
-                       color=state_colors[s % len(state_colors)],
-                       alpha=0.25, linewidth=0)
-
         _phase_lines(ax, config)
         ax.set_ylim(0, 1)
-        ax.set_ylabel("P(A)", fontsize=8)
+        ax.set_ylabel("P(A)", fontsize=_LABEL_FS, labelpad=_LABELPAD)
         label = f"{sid[:10]}..." if len(str(sid)) > 10 else sid
-        ax.text(0.01, 0.95, label, transform=ax.transAxes, fontsize=7,
-                va="top", color="gray")
+        ax.text(0.01, 0.95, label, transform=ax.transAxes,
+                fontsize=_ANNOTATION_FS, va="top", color="gray")
         sns.despine(ax=ax)
 
-    axes[-1].set_xlabel("Time (s)")
-
-    # Legend
-    handles = [mpatches.Patch(color=state_colors[s], alpha=0.5,
-                              label=f"State {s}")
-               for s in range(min(4, max(seq["n_states"]
-                                         for seq in hmm_seqs.values())))]
-    handles.append(Line2D([0], [0], color="red", ls="--", lw=1,
-                          label="Phase boundary"))
-    fig.legend(handles=handles, loc="lower center", ncol=5, fontsize=8,
-               bbox_to_anchor=(0.5, -0.02), frameon=True,
-               edgecolor="lightgray")
-
-    plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure7_hmm_phase_alignment.{fmt}"),
-          config)
+    axes[-1].set_xlabel("Time (s)", fontsize=_LABEL_FS, labelpad=_LABELPAD)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 8 – Convergent Cross-Mapping
+# Figure 7 – Convergent Cross-Mapping
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure8_ccm(analysis_results, fig_dir, fmt, config):
-    """CCM convergence: reward -> choice vs choice -> reward."""
+def figure7_ccm(analysis_results, fig_dir, fmt, config):
+    """CCM convergence per phase: reward -> choice vs choice -> reward."""
     ccm_df = analysis_results.get("ccm")
     if ccm_df is None or len(ccm_df) == 0:
-        print("  Figure 8 skipped: no CCM results.")
+        print("  Figure 7 skipped: no CCM results.")
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    # Determine phases present in data
+    if "phase_id" in ccm_df.columns:
+        phases = sorted(ccm_df["phase_id"].unique())
+        phases = [p for p in phases if p > 0]  # exclude 0 (full-session)
+    else:
+        phases = [0]
 
-    # (A) Group-average convergence curves
-    ax = axes[0]
-    group = ccm_df.groupby("lib_size").agg(
-        rc_mean=("rho_reward_causes_choice", "mean"),
-        rc_sem=("rho_reward_causes_choice", "sem"),
-        cr_mean=("rho_choice_causes_reward", "mean"),
-        cr_sem=("rho_choice_causes_reward", "sem"),
-    ).reset_index()
+    n_phases = len(phases)
+    # Layout: 4 rows x 2 cols (one row per phase)
+    fig, axes = plt.subplots(n_phases, 2, figsize=(12, 5 * n_phases))
+    if n_phases == 1:
+        axes = axes[np.newaxis, :]
 
-    ax.plot(group["lib_size"], group["rc_mean"], "o-", color="#4393C3",
-            lw=2, markersize=5, label="Reward \u2192 Choice")
-    ax.fill_between(group["lib_size"],
-                    group["rc_mean"] - group["rc_sem"],
-                    group["rc_mean"] + group["rc_sem"],
-                    alpha=0.15, color="#4393C3")
-    ax.plot(group["lib_size"], group["cr_mean"], "s-", color="#D6604D",
-            lw=2, markersize=5, label="Choice \u2192 Reward")
-    ax.fill_between(group["lib_size"],
-                    group["cr_mean"] - group["cr_sem"],
-                    group["cr_mean"] + group["cr_sem"],
-                    alpha=0.15, color="#D6604D")
+    phase_labels = {0: "Full Session", **_PHASE_LABELS}
 
-    ax.set_xlabel("Library Size")
-    ax.set_ylabel("Cross-Mapping \u03c1")
-    ax.set_title("A. Group-Average Convergence", fontsize=10,
-                 fontweight="bold", loc="left")
-    ax.legend(fontsize=9)
-    sns.despine(ax=ax)
+    for row, pid in enumerate(phases):
+        if "phase_id" in ccm_df.columns:
+            pdf = ccm_df[ccm_df["phase_id"] == pid]
+        else:
+            pdf = ccm_df
 
-    # (B) Per-session asymmetry at max library size
-    ax = axes[1]
-    max_lib = ccm_df.loc[ccm_df.groupby("session_id")["lib_size"].idxmax()]
-    if "rho_reward_causes_choice" in max_lib.columns:
-        rc = max_lib["rho_reward_causes_choice"].values
-        cr = max_lib["rho_choice_causes_reward"].values
-        ax.scatter(cr, rc, s=40, alpha=0.7, color="steelblue",
-                   edgecolors="white")
-        lims = [min(ax.get_xlim()[0], ax.get_ylim()[0]),
-                max(ax.get_xlim()[1], ax.get_ylim()[1])]
-        ax.plot(lims, lims, "--", color="gray", alpha=0.5)
-        ax.set_xlabel("Choice \u2192 Reward \u03c1")
-        ax.set_ylabel("Reward \u2192 Choice \u03c1")
-    ax.set_title("B. Per-Session Asymmetry", fontsize=10,
-                 fontweight="bold", loc="left")
-    sns.despine(ax=ax)
+        label = phase_labels.get(pid, f"Phase {pid}")
+
+        # Left column: convergence curves (normalized library proportion)
+        ax = axes[row, 0]
+
+        # Normalize lib_size to proportion of each participant's max
+        pdf = pdf.copy()
+        max_libs = pdf.groupby("session_id")["lib_size"].transform("max")
+        pdf["lib_prop"] = pdf["lib_size"] / max_libs
+
+        # Bin into 5 equal-width bins so all participants contribute to each
+        pdf["lib_bin"] = pd.cut(pdf["lib_prop"], bins=5, labels=False)
+        bin_centers = pdf.groupby("lib_bin")["lib_prop"].mean()
+
+        group = pdf.groupby("lib_bin").agg(
+            rc_mean=("rho_reward_causes_choice", "mean"),
+            rc_sem=("rho_reward_causes_choice", "sem"),
+            cr_mean=("rho_choice_causes_reward", "mean"),
+            cr_sem=("rho_choice_causes_reward", "sem"),
+        )
+        group["lib_prop"] = bin_centers
+
+        ax.errorbar(group["lib_prop"], group["rc_mean"],
+                    yerr=1.96 * group["rc_sem"], fmt="o-", color="black",
+                    lw=2, markersize=8, alpha=0.5, capsize=3,
+                    label="Reinforcement \u2192 Choice")
+        ax.errorbar(group["lib_prop"], group["cr_mean"],
+                    yerr=1.96 * group["cr_sem"], fmt="s--", color="#666666",
+                    lw=2, markersize=8, alpha=0.5, capsize=3,
+                    label="Choice \u2192 Reinforcement")
+
+        ax.set_title(label, fontsize=_TITLE_FS, fontweight="bold",
+                     loc="left")
+        ax.set_ylabel("Cross-Mapping $\\it{\\rho}$",
+                      fontsize=_LABEL_FS, labelpad=_LABELPAD)
+        ax.set_xlim(0, 1.1)
+        if row == n_phases - 1:
+            ax.set_xlabel("Library Proportion", fontsize=_LABEL_FS,
+                          labelpad=_LABELPAD)
+        if row == 0:
+            ax.legend(fontsize=14)
+        sns.despine(ax=ax)
+
+        # Right column: per-session asymmetry scatter
+        ax = axes[row, 1]
+        group_keys = ["session_id"]
+        if "phase_id" in pdf.columns:
+            group_keys.append("phase_id")
+        max_lib = pdf.loc[pdf.groupby(group_keys)["lib_size"].idxmax()]
+        if "rho_reward_causes_choice" in max_lib.columns:
+            rc = max_lib["rho_reward_causes_choice"].values
+            cr = max_lib["rho_choice_causes_reward"].values
+            ax.scatter(cr, rc, s=30, alpha=0.5, color="#555555",
+                       edgecolors="white")
+            all_vals = np.concatenate([cr, rc])
+            lo = min(0, np.nanmin(all_vals) - 0.05)
+            hi = max(1, np.nanmax(all_vals) + 0.05)
+            ax.plot([lo, hi], [lo, hi], "--", color="gray", alpha=0.5)
+            ax.set_xlim(lo, hi)
+            ax.set_ylim(lo, hi)
+        ax.set_title(f"Asymmetry: {label}", fontsize=_TITLE_FS,
+                     fontweight="bold", loc="left")
+        ax.set_ylabel("Reinforcement \u2192 Choice $\\it{\\rho}$",
+                      fontsize=_LABEL_FS, labelpad=_LABELPAD)
+        if row == n_phases - 1:
+            ax.set_xlabel("Choice \u2192 Reinforcement $\\it{\\rho}$",
+                          fontsize=_LABEL_FS, labelpad=_LABELPAD)
+        sns.despine(ax=ax)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure8_ccm.{fmt}"), config)
+    _save(fig, os.path.join(fig_dir, f"figure7_ccm.{fmt}"), config)
 
+    # --- Supplemental: individual CCM convergence curves ---
+    supp_dir = os.path.join(fig_dir, "supplements")
+    os.makedirs(supp_dir, exist_ok=True)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Figure 9 – Recurrence Quantification Analysis
-# ═══════════════════════════════════════════════════════════════════════════
+    all_sids = sorted(ccm_df["session_id"].unique())
+    per_page = 30  # 6 rows x 5 cols
+    n_figs = int(np.ceil(len(all_sids) / per_page))
+    n_cols = 5
+    phase_markers = {1: "o", 2: "s", 3: "^", 4: "D"}
 
-def figure9_rqa(analysis_results, events_df, fig_dir, fmt, config):
-    """RQA: (A) example recurrence plot, (B) metric distributions,
-    (C) determinism by phase."""
-    rqa_df = analysis_results.get("rqa")
-    if rqa_df is None or len(rqa_df) == 0:
-        print("  Figure 9 skipped: no RQA results.")
-        return
+    for fig_idx in range(n_figs):
+        start = fig_idx * per_page
+        end = min(start + per_page, len(all_sids))
+        batch = all_sids[start:end]
+        n_rows = int(np.ceil(len(batch) / n_cols))
 
-    fig = plt.figure(figsize=(16, 5))
-    gs = gridspec.GridSpec(1, 3, width_ratios=[1, 1.2, 1])
+        sfig, saxes = plt.subplots(n_rows, n_cols,
+                                   figsize=(4 * n_cols, 3 * n_rows))
+        if n_rows == 1:
+            saxes = saxes[np.newaxis, :]
 
-    # (A) Example recurrence plot
-    ax_rp = fig.add_subplot(gs[0])
-    sids = events_df["session_id"].unique()
-    if len(sids) > 0 and "rolling_choice_prop_a_clicks" in events_df.columns:
-        sid = sids[len(sids) // 2]
-        sdf = events_df[events_df["session_id"] == sid].sort_values(
-            "timestamp_ms")
-        signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
-        if len(signal) > 300:
-            signal = signal[::len(signal) // 300]
-        dist = np.abs(signal[:, None] - signal[None, :])
-        recurrence = (dist < 0.1).astype(int)
-        np.fill_diagonal(recurrence, 0)
-        ax_rp.imshow(recurrence, cmap="Greys", origin="lower",
-                     aspect="equal")
-        ax_rp.set_xlabel("Click index")
-        ax_rp.set_ylabel("Click index")
-    ax_rp.set_title("A. Example Recurrence Plot", fontsize=10,
-                    fontweight="bold", loc="left")
+        for p_idx, sid in enumerate(batch):
+            row = p_idx // n_cols
+            col = p_idx % n_cols
+            ax = saxes[row, col]
 
-    # (B) Metric distributions
-    ax_dist = fig.add_subplot(gs[1])
-    full = rqa_df[rqa_df["scope"] == "full_session"] if "scope" in rqa_df.columns else rqa_df
-    metrics = ["determinism", "recurrence_rate", "laminarity"]
-    avail = [m for m in metrics if m in full.columns]
-    labels = {"determinism": "Determinism", "recurrence_rate": "Recurrence Rate",
-              "laminarity": "Laminarity"}
-    colors = ["#4393C3", "#D6604D", "#5AAE61"]
+            sid_data = ccm_df[ccm_df["session_id"] == sid]
 
-    if avail:
-        parts = ax_dist.violinplot(
-            [full[m].dropna().values for m in avail],
-            positions=np.arange(len(avail)), showmeans=True,
-            showextrema=False)
-        for i, pc in enumerate(parts["bodies"]):
-            pc.set_facecolor(colors[i % len(colors)])
-            pc.set_alpha(0.6)
-        parts["cmeans"].set_color("black")
-        ax_dist.set_xticks(np.arange(len(avail)))
-        ax_dist.set_xticklabels([labels.get(m, m) for m in avail], fontsize=9)
-    ax_dist.set_ylabel("Value")
-    ax_dist.set_title("B. RQA Metric Distributions", fontsize=10,
-                      fontweight="bold", loc="left")
-    sns.despine(ax=ax_dist)
-
-    # (C) Determinism by phase
-    ax_phase = fig.add_subplot(gs[2])
-    phase_col = "phase_id" if "phase_id" in rqa_df.columns else None
-    if phase_col and "determinism" in rqa_df.columns:
-        phase_data = rqa_df[rqa_df[phase_col] > 0].copy()
-        if len(phase_data) > 0:
-            for pid in sorted(phase_data[phase_col].unique()):
-                color = _PHASE_COLORS.get(pid, "gray")
-                vals = phase_data.loc[phase_data[phase_col] == pid,
-                                      "determinism"].dropna()
-                if len(vals) == 0:
+            for pid in phases:
+                if "phase_id" in sid_data.columns:
+                    pdata = sid_data[sid_data["phase_id"] == pid]
+                else:
+                    pdata = sid_data
+                if len(pdata) == 0:
                     continue
-                ax_phase.boxplot(
-                    [vals.values], positions=[pid], widths=0.5,
-                    patch_artist=True,
-                    boxprops=dict(facecolor=color, alpha=0.5),
-                    medianprops=dict(color="black"),
-                    showfliers=False)
-                jitter = np.random.default_rng(pid).uniform(
-                    -0.12, 0.12, len(vals))
-                ax_phase.scatter(pid + jitter, vals.values, s=15, alpha=0.4,
-                                 color=color, zorder=3)
-            ax_phase.set_xticks([1, 2, 3, 4])
-            ax_phase.set_xticklabels(
-                ["Ph 1\nSymmetric", "Ph 2\nA-adv",
-                 "Ph 3\nB-adv", "Ph 4\nScarcity"], fontsize=8)
-    ax_phase.set_ylabel("Determinism")
-    ax_phase.set_title("C. Determinism by Phase", fontsize=10,
-                       fontweight="bold", loc="left")
-    sns.despine(ax=ax_phase)
 
-    plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure9_rqa.{fmt}"), config)
+                max_lib = pdata["lib_size"].max()
+                if max_lib <= 0:
+                    continue
+                lib_prop = pdata["lib_size"] / max_lib
+                marker = phase_markers.get(pid, "o")
+
+                # R->C: black filled
+                ax.plot(lib_prop, pdata["rho_reward_causes_choice"],
+                        marker=marker, ls="-", color="black",
+                        markersize=3, lw=1, alpha=0.5)
+                # C->R: gray open
+                ax.plot(lib_prop, pdata["rho_choice_causes_reward"],
+                        marker=marker, ls="--", color="gray",
+                        markersize=3, lw=1, alpha=0.5,
+                        markerfacecolor="white", markeredgecolor="gray")
+
+            ax.set_xlim(0, 1.1)
+            ax.set_ylim(-0.2, 1.0)
+            short_id = f"{sid[:10]}..." if len(str(sid)) > 10 else sid
+            ax.set_title(short_id, fontsize=7, loc="left")
+            ax.tick_params(labelsize=7)
+            sns.despine(ax=ax)
+
+            if row == n_rows - 1:
+                ax.set_xlabel("Lib. Prop.", fontsize=8)
+            if col == 0:
+                ax.set_ylabel("$\\it{\\rho}$", fontsize=10)
+
+        # Hide unused axes
+        for p_idx in range(len(batch), n_rows * n_cols):
+            saxes[p_idx // n_cols, p_idx % n_cols].set_visible(False)
+
+        # Legend on first subplot
+        phase_names = {1: "Sym", 2: "A-adv", 3: "B-adv", 4: "Scar"}
+        handles = []
+        for p in phases:
+            m = phase_markers.get(p, "o")
+            handles.append(Line2D([0], [0], marker=m, color="black",
+                                  markersize=4, lw=1,
+                                  label=f"{phase_names.get(p, '')} R\u2192C"))
+            handles.append(Line2D([0], [0], marker=m, color="gray",
+                                  markersize=4, lw=1, ls="--",
+                                  markerfacecolor="white",
+                                  markeredgecolor="gray",
+                                  label=f"{phase_names.get(p, '')} C\u2192R"))
+        saxes[0, 0].legend(handles=handles, fontsize=4, loc="upper left",
+                           ncol=2)
+
+        plt.tight_layout()
+        _save(sfig, os.path.join(supp_dir,
+              f"figure7_supp_{fig_idx + 1}.{fmt}"), config)
+
+    print(f"  CCM supplements ({n_figs} pages) saved to {supp_dir}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 8 – Recurrence Quantification Analysis
+# ═══════════════════════════════════════════════════════════════════════════
+
+def figure8_rqa(analysis_results, events_df, fig_dir, fmt, config):
+    """Individual recurrence plots in a 7 col x 9 row grid.
+
+    First two cells are reference plots (Lorenz attractor for chaotic
+    structure, white noise for no structure). Remaining 61 cells hold
+    the 60 participants plus one unused cell.
+    """
+    if "rolling_choice_prop_a_clicks" not in events_df.columns:
+        print("  Figure 8 skipped: no rolling choice proportion.")
+        return
+
+    pbs = config.get("phase_boundaries", [])
+    sids = sorted(events_df["session_id"].unique())
+
+    n_cols = 5
+    n_rows = 7
+    threshold = 0.05
+    n_ref = 300
+
+    # Number of reference cells (3 examples + 1 spacer)
+    n_ref_cells = 4
+    slots_per_page = n_cols * n_rows - n_ref_cells
+    n_figs = int(np.ceil(len(sids) / slots_per_page))
+
+    def _plot_references(axes_row):
+        """Plot 3 reference recurrence plots + 1 spacer in first row."""
+        # 1. Damped oscillation
+        ax = axes_row[0]
+        t_ref = np.linspace(0, 6 * np.pi, n_ref)
+        damped = 0.5 + 0.5 * np.exp(-t_ref / (4 * np.pi)) * np.sin(t_ref)
+        dist = np.abs(damped[:, None] - damped[None, :])
+        rec = (dist < threshold).astype(int)
+        np.fill_diagonal(rec, 0)
+        ax.imshow(rec, cmap="Greys", origin="lower", aspect="equal")
+        ax.set_title("Damped Oscillation", fontsize=12, fontweight="bold",
+                     loc="left", pad=2)
+        ax.set_xticks([]); ax.set_yticks([])
+
+        # 2. Chirp (structured but changing frequency)
+        ax = axes_row[1]
+        t_ref2 = np.linspace(0, 1, n_ref)
+        chirp = 0.5 + 0.5 * np.sin(2 * np.pi * (2 + 15 * t_ref2) * t_ref2)
+        dist = np.abs(chirp[:, None] - chirp[None, :])
+        rec = (dist < threshold).astype(int)
+        np.fill_diagonal(rec, 0)
+        ax.imshow(rec, cmap="Greys", origin="lower", aspect="equal")
+        ax.set_title("Chirp (Non-stationary)", fontsize=12,
+                     fontweight="bold", loc="left", pad=2)
+        ax.set_xticks([]); ax.set_yticks([])
+
+        # 3. White noise (no structure)
+        ax = axes_row[2]
+        rng = np.random.default_rng(42)
+        noise = rng.uniform(0, 1, n_ref)
+        dist = np.abs(noise[:, None] - noise[None, :])
+        rec = (dist < threshold).astype(int)
+        np.fill_diagonal(rec, 0)
+        ax.imshow(rec, cmap="Greys", origin="lower", aspect="equal")
+        ax.set_title("Random (White Noise)", fontsize=12,
+                     fontweight="bold", loc="left", pad=2)
+        ax.set_xticks([]); ax.set_yticks([])
+
+        # 4. Spacer
+        ax = axes_row[3]
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.spines[:].set_visible(False)
+
+    for fig_idx in range(n_figs):
+        start = fig_idx * slots_per_page
+        end = min(start + slots_per_page, len(sids))
+        batch = sids[start:end]
+
+        fig, axes = plt.subplots(n_rows, n_cols,
+                                 figsize=(3 * n_cols, 3 * n_rows))
+
+        # Reference plots in first row
+        _plot_references(axes[0])
+
+        # Participants start at cell index 4 (after 3 refs + 1 spacer)
+        cell_idx = n_ref_cells
+        p_num = start + 1  # P1, P2, ...
+
+        for sid in batch:
+            row = cell_idx // n_cols
+            col = cell_idx % n_cols
+            if row >= n_rows:
+                break
+            ax = axes[row, col]
+
+            sdf = events_df[events_df["session_id"] == sid].sort_values(
+                "timestamp_ms")
+            signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
+            elapsed = sdf["elapsed_time_s"].dropna().values[:len(signal)]
+
+            if len(signal) < 20:
+                ax.set_visible(False)
+                cell_idx += 1
+                continue
+
+            if len(signal) > 300:
+                step = len(signal) // 300
+                signal = signal[::step]
+                elapsed = elapsed[::step]
+
+            n = len(signal)
+            dist = np.abs(signal[:, None] - signal[None, :])
+            recurrence = (dist < threshold).astype(int)
+            np.fill_diagonal(recurrence, 0)
+
+            ax.imshow(recurrence, cmap="Greys", origin="lower",
+                      aspect="equal", extent=[0, n, 0, n],
+                      zorder=1, interpolation="nearest")
+
+            # Phase boundary pips outside the plot area
+            for pb in pbs:
+                t_boundary = pb["start_ms"] / 1000
+                if t_boundary <= 0:
+                    continue
+                idx = np.searchsorted(elapsed, t_boundary)
+                if 0 < idx < n:
+                    ax.plot([idx, idx], [-n * 0.04, 0],
+                            color="black", lw=1.5, clip_on=False)
+                    ax.plot([-n * 0.04, 0], [idx, idx],
+                            color="black", lw=1.5, clip_on=False)
+
+            ax.set_title(f"P{p_num}", fontsize=8, loc="left", pad=2)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+            cell_idx += 1
+            p_num += 1
+
+        # Hide unused cells
+        for ci in range(cell_idx, n_rows * n_cols):
+            axes[ci // n_cols, ci % n_cols].set_visible(False)
+
+        fig.supxlabel("Click Index", fontsize=42, y=-0.01)
+        fig.supylabel("Click Index", fontsize=42, x=-0.01)
+        plt.tight_layout(pad=0.5)
+
+        suffix = f"_{fig_idx + 1}" if n_figs > 1 else ""
+        _save(fig, os.path.join(fig_dir,
+              f"figure8_rqa{suffix}.{fmt}"), config)

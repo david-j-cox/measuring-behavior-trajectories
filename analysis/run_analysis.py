@@ -188,6 +188,8 @@ def main():
             hmm_summary = summarize_hmm_states(hmm_state_sequences, output_dir)
             if len(hmm_summary) > 0:
                 analysis_results["hmm_state_summary"] = hmm_summary
+            if hmm_state_sequences:
+                analysis_results["hmm_state_sequences"] = hmm_state_sequences
 
         if all_model_results:
             model_comparison = pd.concat(all_model_results, ignore_index=True)

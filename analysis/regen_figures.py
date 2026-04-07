@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Regenerate empirical paper figures from cached analysis outputs."""
+"""Regenerate empirical paper figures from cached analysis outputs.
 
+Usage:
+    python regen_figures.py              # all figures
+    python regen_figures.py --figure 5   # just figure 5
+    python regen_figures.py --figure 2 5 # figures 2 and 5
+"""
+
+import argparse
 import os
 import sys
 import pandas as pd
@@ -12,6 +19,12 @@ from analysis_pipeline.empirical_paper.figure_generation import generate_all_fig
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Regenerate empirical paper figures.")
+    parser.add_argument("--figure", "-f", type=int, nargs="+", default=None,
+                        help="Figure number(s) to regenerate (default: all)")
+    args = parser.parse_args()
+
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
@@ -54,12 +67,17 @@ def main():
         analysis_results["hmm_state_summary"] = pd.read_csv(hmm_path)
         print(f"  HMM summary: {len(analysis_results['hmm_state_summary'])} rows")
 
-    # Note: HMM state sequences (per-click assignments) are not cached as CSV.
-    # Figure 7 (phase alignment) requires these. If missing, it will be skipped.
+    # HMM state sequences (per-click assignments)
+    hmm_seq_path = os.path.join(tables_dir, "hmm_state_sequences.json")
+    if os.path.exists(hmm_seq_path):
+        from analysis_pipeline.models.hmm_models import load_state_sequences
+        analysis_results["hmm_state_sequences"] = load_state_sequences(
+            hmm_seq_path)
+        print(f"  HMM sequences: {len(analysis_results['hmm_state_sequences'])} sessions")
 
     print("\nGenerating figures...")
     generate_all_figures(events_df, metrics_df, analysis_results, config,
-                         output_dir)
+                         output_dir, only=args.figure)
     print("Done.")
 
 

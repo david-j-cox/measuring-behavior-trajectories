@@ -793,87 +793,114 @@ def _plot_rqa_summary(rqa_df: pd.DataFrame, config: dict,
 # Convergent Cross Mapping (CCM)
 # ============================================================
 
-def _ccm_single_session(sdf, sid, best_E_cache, target_n=200):
-    """Run CCM for a single session. Returns list of row dicts."""
+def _ccm_single_session(sdf, sid, best_E_cache, target_n=200,
+                        phase_boundaries=None):
+    """Run CCM for a single session, within each phase separately.
+
+    If phase_boundaries is provided, CCM is run within each phase
+    to respect stationarity. Otherwise falls back to full-session.
+    Returns list of row dicts.
+    """
     sdf = sdf.sort_values("timestamp_ms")
-    choice = sdf["rolling_choice_prop_a_clicks"].dropna().values
-    reward = sdf["rolling_reward_rate_clicks"].dropna().values
 
-    n = min(len(choice), len(reward))
-    if n < 50:
-        return []
-
-    choice = choice[:n]
-    reward = reward[:n]
-
-    # Subsample (Item 11)
-    if n > target_n:
-        step = n / target_n
-        indices = np.round(np.arange(0, n, step)).astype(int)
-        indices = indices[indices < n]
-        choice = choice[indices]
-        reward = reward[indices]
-        n = len(choice)
-
-    edm_df = pd.DataFrame({
-        "time": np.arange(n),
-        "choice": choice,
-        "reward": reward,
-    })
+    # Build list of (phase_id, phase_sdf) segments
+    segments = []
+    if (phase_boundaries and "elapsed_time_s" in sdf.columns
+            and "phase_id" in sdf.columns):
+        for pb in phase_boundaries:
+            pid = pb["id"]
+            phase_sdf = sdf[sdf["phase_id"] == pid]
+            if len(phase_sdf) >= 50:
+                segments.append((pid, phase_sdf))
+    if not segments:
+        # Fallback: full session as single segment
+        segments = [(0, sdf)]
 
     ccm_rows = []
 
-    try:
-        # Use cached best_E (Item 14)
-        best_E = best_E_cache.get(sid)
-        if best_E is None:
-            simplex_out = pyEDM.EmbedDimension(
-                dataFrame=edm_df, columns="choice", target="choice",
-                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
-                maxE=6, showPlot=False
-            )
-            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
-        best_E = max(2, best_E)
+    for phase_id, seg_df in segments:
+        choice = seg_df["rolling_choice_prop_a_clicks"].dropna().values
+        reward = seg_df["rolling_reward_rate_clicks"].dropna().values
 
-        # Reduced library sizes: 5 evenly spaced values (Item 13)
-        lib_sizes = np.linspace(max(best_E + 2, 20), n - 10,
-                                5).astype(int)
-        lib_sizes = np.unique(lib_sizes)
+        n = min(len(choice), len(reward))
+        if n < 50:
+            continue
 
-        for lib_size in lib_sizes:
-            try:
-                ccm_out = pyEDM.CCM(
-                    dataFrame=edm_df,
-                    columns="choice", target="reward",
-                    E=best_E,
-                    libSizes=f"{lib_size}",
-                    sample=20,  # Reduced from 50 (Item 13)
-                    showPlot=False
+        choice = choice[:n]
+        reward = reward[:n]
+
+        # Subsample if needed
+        if n > target_n:
+            step = n / target_n
+            indices = np.round(np.arange(0, n, step)).astype(int)
+            indices = indices[indices < n]
+            choice = choice[indices]
+            reward = reward[indices]
+            n = len(choice)
+
+        edm_df = pd.DataFrame({
+            "time": np.arange(n),
+            "choice": choice,
+            "reward": reward,
+        })
+
+        try:
+            # Use cached best_E
+            best_E = best_E_cache.get(sid)
+            if best_E is None:
+                simplex_out = pyEDM.EmbedDimension(
+                    dataFrame=edm_df, columns="choice", target="choice",
+                    lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+                    maxE=6, showPlot=False
                 )
-                rho_cr = ccm_out["choice:reward"].mean()
+                best_E = int(
+                    simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+            best_E = max(2, best_E)
 
-                ccm_out2 = pyEDM.CCM(
-                    dataFrame=edm_df,
-                    columns="reward", target="choice",
-                    E=best_E,
-                    libSizes=f"{lib_size}",
-                    sample=20,  # Reduced from 50 (Item 13)
-                    showPlot=False
-                )
-                rho_rc = ccm_out2["reward:choice"].mean()
-
-                ccm_rows.append({
-                    "session_id": sid,
-                    "E": best_E,
-                    "lib_size": lib_size,
-                    "rho_reward_causes_choice": rho_cr,
-                    "rho_choice_causes_reward": rho_rc,
-                })
-            except Exception:
+            # Library sizes: 5 evenly spaced values
+            min_lib = max(best_E + 2, 20)
+            max_lib = n - 10
+            if max_lib <= min_lib:
                 continue
+            lib_sizes = np.linspace(min_lib, max_lib, 5).astype(int)
+            lib_sizes = np.unique(lib_sizes)
 
-    except Exception as e:
-        print(f"  CCM failed for session {sid}: {e}")
+            for lib_size in lib_sizes:
+                try:
+                    ccm_out = pyEDM.CCM(
+                        dataFrame=edm_df,
+                        columns="choice", target="reward",
+                        E=best_E,
+                        libSizes=f"{lib_size}",
+                        sample=20,
+                        showPlot=False
+                    )
+                    rho_cr = ccm_out["choice:reward"].mean()
+
+                    ccm_out2 = pyEDM.CCM(
+                        dataFrame=edm_df,
+                        columns="reward", target="choice",
+                        E=best_E,
+                        libSizes=f"{lib_size}",
+                        sample=20,
+                        showPlot=False
+                    )
+                    rho_rc = ccm_out2["reward:choice"].mean()
+
+                    ccm_rows.append({
+                        "session_id": sid,
+                        "phase_id": phase_id,
+                        "E": best_E,
+                        "lib_size": lib_size,
+                        "n_obs": n,
+                        "rho_reward_causes_choice": rho_cr,
+                        "rho_choice_causes_reward": rho_rc,
+                    })
+                except Exception:
+                    continue
+
+        except Exception as e:
+            print(f"  CCM failed for session {sid} phase {phase_id}: {e}")
 
     return ccm_rows
 
@@ -892,24 +919,34 @@ def _run_ccm(events_df: pd.DataFrame, config: dict,
 
     session_ids = events_df["session_id"].unique()
     csv_path = os.path.join(tables_dir, "ccm_results.csv")
+    phase_boundaries = config.get("phase_boundaries", [])
 
     # Session-level result caching (Item 16)
+    # Check if existing cache has phase_id column (within-phase analysis)
     existing_df = pd.DataFrame()
     sessions_to_compute = list(session_ids)
     if os.path.exists(csv_path):
         existing_df = pd.read_csv(csv_path)
-        already_done = set(existing_df["session_id"].unique())
-        sessions_to_compute = [s for s in session_ids if s not in already_done]
-        if len(sessions_to_compute) == 0:
-            print("  CCM: all sessions cached, skipping computation.")
-            if len(existing_df) > 0:
-                _plot_ccm(existing_df, config, fig_dir, fmt)
-            return existing_df
+        # Force recompute if old cache lacks phase_id (full-session analysis)
+        if "phase_id" not in existing_df.columns:
+            print("  CCM: recomputing with within-phase analysis...")
+            existing_df = pd.DataFrame()
+        else:
+            already_done = set(existing_df["session_id"].unique())
+            sessions_to_compute = [s for s in session_ids
+                                   if s not in already_done]
+            if len(sessions_to_compute) == 0:
+                print("  CCM: all sessions cached, skipping computation.")
+                if len(existing_df) > 0:
+                    _plot_ccm(existing_df, config, fig_dir, fmt)
+                return existing_df
 
     # Parallelize across sessions (Item 12)
-    session_dfs = {sid: events_df[events_df["session_id"] == sid] for sid in sessions_to_compute}
+    session_dfs = {sid: events_df[events_df["session_id"] == sid]
+                   for sid in sessions_to_compute}
     results = _batched_parallel([
-        delayed(_ccm_single_session)(session_dfs[sid], sid, best_E_cache)
+        delayed(_ccm_single_session)(session_dfs[sid], sid, best_E_cache,
+                                     phase_boundaries=phase_boundaries)
         for sid in sessions_to_compute
     ])
 
