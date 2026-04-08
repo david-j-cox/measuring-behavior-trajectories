@@ -34,10 +34,10 @@ import numpy as np
 import pandas as pd
 
 from pipeline.utils import load_config, ensure_dirs
-from pipeline.io import load_data
-from pipeline.validate import validate_events
-from pipeline.transform import compute_derived_variables
-from pipeline.metrics import compute_session_metrics
+from pipeline.step01_load_data import load_data
+from pipeline.step02_validate_data import validate_events
+from pipeline.step03_feature_engineering import compute_derived_variables
+from pipeline.step04_session_metrics import compute_session_metrics
 
 
 def main():
@@ -215,13 +215,13 @@ def main():
 
         # Phase analysis
         print("\n--- Phase analysis ---")
-        from pipeline.phase_analysis import run_phase_analysis
+        from pipeline.step06_phase_analysis import run_phase_analysis
         phase_results = run_phase_analysis(events_df, metrics_df, config, output_dir)
         analysis_results.update(phase_results)
 
         # Dynamical analysis (RQA, state space, EDM)
         print("\n--- Dynamical analysis ---")
-        from pipeline.dynamical_analysis import run_dynamical_analysis
+        from pipeline.step06_dynamical_analysis import run_dynamical_analysis
         dyn_results = run_dynamical_analysis(events_df, config, output_dir)
         analysis_results.update(dyn_results)
         plt.close("all")
@@ -229,7 +229,7 @@ def main():
 
         # Fractal analysis (DFA, sample entropy)
         print("\n--- Fractal analysis ---")
-        from pipeline.fractal_analysis import run_fractal_analysis
+        from pipeline.step06_fractal_analysis import run_fractal_analysis
         fractal_results = run_fractal_analysis(events_df, config, output_dir)
         analysis_results.update(fractal_results)
         plt.close("all")
@@ -237,7 +237,7 @@ def main():
 
         # Individual differences (PCA + GMM clustering)
         print("\n--- Individual differences ---")
-        from pipeline.individual_differences import run_individual_differences
+        from pipeline.step06_individual_differences import run_individual_differences
         id_results = run_individual_differences(
             metrics_df, analysis_results, config, output_dir
         )
@@ -247,7 +247,7 @@ def main():
     print("\n" + "-" * 40)
     print("FIGURE GENERATION")
     print("-" * 40)
-    from pipeline.figures.figure_generation import (
+    from pipeline.step07_generate_figures import (
         generate_all_figures,
     )
     generate_all_figures(events_df, metrics_df, analysis_results, config,

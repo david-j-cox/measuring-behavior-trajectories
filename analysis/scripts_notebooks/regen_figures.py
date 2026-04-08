@@ -18,7 +18,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ANALYSIS_DIR = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, SCRIPT_DIR)
 
-from pipeline.figures.figure_generation import generate_all_figures
+from pipeline.step07_generate_figures import generate_all_figures
 
 
 def main():
