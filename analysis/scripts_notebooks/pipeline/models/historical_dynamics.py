@@ -1,10 +1,11 @@
 """Historical behavior-dynamic models of choice.
 
-Implements four models from the 1980s–1992 behavior dynamics literature:
+Implements five models from the 1980s–1992 behavior dynamics literature:
   - Melioration (Herrnstein & Vaughan, 1980; Vaughan, 1981)
   - Kinetic model (Myerson & Miezin, 1980; Myerson & Hale, 1988)
   - Behavioral momentum (Nevin, 1983; Nevin & Shahan, 2011)
   - Hill-climbing / momentary maximizing (Hinson & Staddon, 1983)
+  - Ratio invariance (Staddon, 1988)
 
 Each model produces both:
   - Trial-level predictions: P(choose A) per trial -> NLL, AIC, BIC
@@ -54,6 +55,10 @@ def fit_historical_models(events_df: pd.DataFrame, config: dict) -> pd.DataFrame
         ici_s = sdf["ici_s"].values if "ici_s" in sdf.columns else None
         result = _fit_hill_climbing(choices, rewards, ici_s, n_starts)
         rows.append(_model_row(sid, "hill_climbing", result, n_obs))
+
+        # Ratio invariance (Staddon, 1988)
+        result = _fit_ratio_invariance(choices, rewards, n_starts)
+        rows.append(_model_row(sid, "ratio_invariance", result, n_obs))
 
     return pd.DataFrame(rows)
 
@@ -569,6 +574,72 @@ def _get_local_rates(sdf, window):
             R_A[t] = (c * r).sum() / max(n_a, 1)
             R_B[t] = ((1 - c) * r).sum() / max(n_b, 1)
     return R_A, R_B
+
+
+# ============================================================
+# Ratio Invariance (Staddon, 1988)
+# ============================================================
+# Core idea: organisms maintain a constant ratio of behavior to
+# reinforcement. Choice proportion evolves toward an equilibrium
+# determined by aggregate reward rates, with an effect-ratio
+# parameter omega capturing asymmetric non-reward effects.
+#
+# Equilibrium: s* = (R_A - omega) / (R_A + R_B - 2*omega)
+# When omega = 0, this recovers the matching law: P(A) = R_A/(R_A+R_B).
+# Update: delta_s = s*(R_A + R_B - 2*omega) + omega - R_B
+#
+# Trial-level: track local rates, compute equilibrium,
+# use logistic mapping to choice probability.
+
+def _fit_ratio_invariance(choices, rewards, n_starts):
+    """Fit ratio invariance: omega (effect ratio), beta (sensitivity)."""
+    def neg_log_lik(params):
+        omega = _sigmoid(params[0]) * 0.5  # constrain to [0, 0.5]
+        beta = np.exp(params[1])
+        return _ratio_invariance_nll(choices, rewards, omega, beta)
+
+    best = _multi_start_optimize(neg_log_lik, n_starts, n_params=2,
+                                  bounds=[(-5, 5), (-2, 5)])
+    omega = _sigmoid(best.x[0]) * 0.5
+    beta = np.exp(best.x[1])
+    return {
+        "nll": best.fun,
+        "n_params": 2,
+        "params": {"omega": omega, "beta": beta},
+    }
+
+
+def _ratio_invariance_nll(choices, rewards, omega, beta):
+    """Negative log-likelihood for ratio invariance.
+
+    Tracks local reward rates with exponential recency weighting
+    (like melioration), but computes equilibrium choice proportion
+    via the ratio-invariance formula rather than rate difference.
+    """
+    alpha_lr = 0.1  # fixed learning rate for local rate estimation
+    R_A, R_B = 0.5, 0.5
+    nll = 0.0
+    eps = 1e-6
+
+    for t in range(len(choices)):
+        # Ratio-invariance equilibrium
+        denom = R_A + R_B - 2 * omega
+        if abs(denom) < eps:
+            s_star = 0.5
+        else:
+            s_star = np.clip((R_A - omega) / denom, 0.01, 0.99)
+
+        # Choice probability via logistic mapping
+        p_a = _logistic(beta * (s_star - 0.5))
+        nll -= np.log(max(p_a if choices[t] == 1 else 1 - p_a, 1e-10))
+
+        # Update local rate for chosen option
+        if choices[t] == 1:
+            R_A = (1 - alpha_lr) * R_A + alpha_lr * rewards[t]
+        else:
+            R_B = (1 - alpha_lr) * R_B + alpha_lr * rewards[t]
+
+    return nll
 
 
 def _model_row(session_id, model_name, result, n_obs):
