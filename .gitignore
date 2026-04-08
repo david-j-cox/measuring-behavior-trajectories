@@ -1,8 +1,6 @@
 .DS_Store
 *.log
-node_modules/
-package.json
-package-lock.json
+experiment/node_modules/
 
 # Firebase credentials (use firebase-config.example.js as template)
 experiment/js/firebase-config.js
@@ -17,3 +15,13 @@ analysis/outputs/
 
 # Firebase service account key
 service-account-key.json
+
+# Manuscript
+manuscript/
+
+# Data and outputs
+analysis/data/
+analysis/pipeline_outputs/
+
+# Reference articles (PDFs)
+articles/

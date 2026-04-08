@@ -178,12 +178,11 @@ def run_null_comparison(events_df, config, output_dir):
         comparison_table : pd.DataFrame  (metric x process summary)
         null_results : dict of per-process metric DataFrames
     """
-    from analysis_pipeline.transform import compute_derived_variables
-    from analysis_pipeline.fractal_analysis import (
+    from pipeline.transform import compute_derived_variables
+    from pipeline.fractal_analysis import (
         _compute_dfa, _sample_entropy,
     )
-    from analysis_pipeline.changepoint_analysis import _bocpd_gaussian
-    from analysis_pipeline.dynamical_analysis import _compute_rqa_metrics
+    from pipeline.dynamical_analysis import _compute_rqa_metrics
 
     tables_dir = os.path.join(output_dir, "tables")
     fig_dir = os.path.join(output_dir, "figures", "null_comparison")
@@ -207,7 +206,7 @@ def run_null_comparison(events_df, config, output_dir):
     print("  Computing metrics on real data...")
     real_metrics = _compute_null_metrics(
         events_df, _compute_dfa, _sample_entropy, _compute_rqa_metrics,
-        _bocpd_gaussian, rolling_window,
+        rolling_window,
     )
 
     # --- Compute metrics on each null process ---
@@ -216,13 +215,12 @@ def run_null_comparison(events_df, config, output_dir):
         print(f"  Computing metrics on null data: {name}...")
         null_results[name] = _compute_null_metrics(
             null_df, _compute_dfa, _sample_entropy, _compute_rqa_metrics,
-            _bocpd_gaussian, rolling_window,
+            rolling_window,
         )
 
     # --- Build comparison table ---
     metric_names = ["dfa_alpha", "sample_entropy", "recurrence_rate",
-                    "determinism", "laminarity", "trapping_time",
-                    "n_changepoints"]
+                    "determinism", "laminarity", "trapping_time"]
 
     rows = []
     for metric in metric_names:
@@ -255,7 +253,7 @@ def run_null_comparison(events_df, config, output_dir):
 
 
 def _compute_null_metrics(events_df, compute_dfa_fn, sample_entropy_fn,
-                          compute_rqa_fn, bocpd_fn, rolling_window):
+                          compute_rqa_fn, rolling_window):
     """
     Compute key metrics per session for null comparison.
 
@@ -268,7 +266,6 @@ def _compute_null_metrics(events_df, compute_dfa_fn, sample_entropy_fn,
         "determinism": [],
         "laminarity": [],
         "trapping_time": [],
-        "n_changepoints": [],
     }
 
     for sid, sdf in events_df.groupby("session_id"):
@@ -310,34 +307,6 @@ def _compute_null_metrics(events_df, compute_dfa_fn, sample_entropy_fn,
         else:
             for k in ["recurrence_rate", "determinism", "laminarity", "trapping_time"]:
                 metrics[k].append(np.nan)
-
-        # BOCPD changepoint count
-        if "rolling_choice_prop_a_clicks" in sdf.columns:
-            cp_signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
-        else:
-            cp_signal = choices.astype(float)
-
-        if len(cp_signal) >= 30:
-            cp_prob, _ = bocpd_fn(cp_signal)
-            warmup = min(20, len(cp_prob) // 10)
-            threshold = 0.3
-            cp_indices = np.where(
-                (cp_prob > threshold) & (np.arange(len(cp_prob)) >= warmup)
-            )[0]
-            # Merge nearby changepoints (within 20 clicks)
-            if len(cp_indices) > 0:
-                merged = [cp_indices[0]]
-                for idx in cp_indices[1:]:
-                    if idx - merged[-1] > 20:
-                        merged.append(idx)
-                    elif cp_prob[idx] > cp_prob[merged[-1]]:
-                        merged[-1] = idx
-                n_cp = len(merged)
-            else:
-                n_cp = 0
-            metrics["n_changepoints"].append(n_cp)
-        else:
-            metrics["n_changepoints"].append(np.nan)
 
     return metrics
 

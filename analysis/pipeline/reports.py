@@ -121,7 +121,7 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
     if "model_comparison" in analysis_results:
         mc = analysis_results["model_comparison"]
         if isinstance(mc, pd.DataFrame) and len(mc) > 0:
-            matching_df = mc[mc["model"].isin(["strict_matching", "generalized_matching"])]
+            matching_df = mc[mc["model"] == "generalized_matching_law"]
             if len(matching_df) > 0:
                 sections.append("<h2>5. Matching Law Analysis</h2>")
                 sections.append("""<p>The generalized matching law (Baum, 1974) is the
@@ -133,34 +133,28 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
                 log(R<sub>A</sub>/R<sub>B</sub>) + log(<em>b</em>)</blockquote>""")
 
                 sections.append("<h3>Parameter Distributions</h3>")
-                for model_name in ["strict_matching", "generalized_matching"]:
-                    mdf = matching_df[matching_df["model"] == model_name]
-                    if len(mdf) == 0:
-                        continue
-                    label = model_name.replace("_", " ").title()
-                    s_mean = mdf["sensitivity"].mean()
-                    s_sd = mdf["sensitivity"].std()
-                    s_min = mdf["sensitivity"].min()
-                    s_max = mdf["sensitivity"].max()
-                    b_mean = mdf["bias"].mean()
-                    b_sd = mdf["bias"].std()
-                    r2_mean = mdf["r_squared"].mean()
-                    r2_sd = mdf["r_squared"].std()
-                    r2_min = mdf["r_squared"].min()
-                    r2_max = mdf["r_squared"].max()
+                s_mean = matching_df["sensitivity"].mean()
+                s_sd = matching_df["sensitivity"].std()
+                s_min = matching_df["sensitivity"].min()
+                s_max = matching_df["sensitivity"].max()
+                b_mean = matching_df["bias"].mean()
+                b_sd = matching_df["bias"].std()
+                r2_mean = matching_df["r_squared"].mean()
+                r2_sd = matching_df["r_squared"].std()
+                r2_min = matching_df["r_squared"].min()
+                r2_max = matching_df["r_squared"].max()
 
-                    sections.append(f"<h4>{label}</h4>")
-                    sections.append(f"""<ul>
-                        <li><strong>Sensitivity (<em>s</em>):</strong>
-                            mean = {s_mean:.3f} (SD = {s_sd:.3f}),
-                            range = [{s_min:.3f}, {s_max:.3f}]</li>
-                        <li><strong>Bias (<em>b</em>):</strong>
-                            mean = {b_mean:.3f} (SD = {b_sd:.3f})</li>
-                        <li><strong>R&sup2;:</strong>
-                            mean = {r2_mean:.3f} (SD = {r2_sd:.3f}),
-                            range = [{r2_min:.3f}, {r2_max:.3f}]</li>
-                        <li><strong>Sessions fit:</strong> {len(mdf)}</li>
-                    </ul>""")
+                sections.append(f"""<ul>
+                    <li><strong>Sensitivity (<em>s</em>):</strong>
+                        mean = {s_mean:.3f} (SD = {s_sd:.3f}),
+                        range = [{s_min:.3f}, {s_max:.3f}]</li>
+                    <li><strong>Bias (<em>b</em>):</strong>
+                        mean = {b_mean:.3f} (SD = {b_sd:.3f})</li>
+                    <li><strong>R&sup2;:</strong>
+                        mean = {r2_mean:.3f} (SD = {r2_sd:.3f}),
+                        range = [{r2_min:.3f}, {r2_max:.3f}]</li>
+                    <li><strong>Sessions fit:</strong> {len(matching_df)}</li>
+                </ul>""")
 
                 # Interpretation of sensitivity
                 sections.append("<h3>Interpretation</h3>")
@@ -332,36 +326,6 @@ def _generate_html_report(metrics_df, validation_report, analysis_results,
             means stronger nonlinearity.</p>""")
             sections.append(_df_to_html(smap_df.round(3),
                                          "S-Map Results by Session"))
-
-    # Change-point detection
-    if "changepoints" in analysis_results:
-        cp_df = analysis_results["changepoints"]
-        if isinstance(cp_df, pd.DataFrame) and len(cp_df) > 0:
-            sections.append("<h2>11. Change-Point Detection (BOCPD)</h2>")
-            sections.append("""<p>Bayesian Online Change Point Detection (Adams &amp; MacKay, 2007)
-            identifies points where the generative process underlying the choice time series
-            changes. Unlike the fixed adaptation-lag metric, BOCPD makes no assumptions about
-            where changes occur — it discovers them from the data. Comparing detected change
-            points to known phase boundaries reveals how quickly participants' behavior shifts
-            after environmental regime changes.</p>""")
-            cps_only = cp_df[cp_df["click_index"] >= 0]
-            if len(cps_only) > 0:
-                display_cols = ["session_id", "elapsed_time_s", "cp_probability"]
-                available = [c for c in display_cols if c in cps_only.columns]
-                sections.append(_df_to_html(cps_only[available].round(3),
-                                             "Detected Change Points"))
-
-        if "boundary_alignment" in analysis_results:
-            alignment = analysis_results["boundary_alignment"]
-            if alignment:
-                sections.append("<h3>Change-Point Alignment with Phase Boundaries</h3>")
-                for boundary, stats in alignment.items():
-                    sections.append(
-                        f"<p><strong>Boundary at {boundary}:</strong> "
-                        f"{stats['n_sessions_with_nearby_cp']} sessions with nearby CP, "
-                        f"mean lag = {stats['mean_lag_s']:.1f}s, "
-                        f"median = {stats['median_lag_s']:.1f}s</p>"
-                    )
 
     # DFA / Fractal analysis
     if "dfa" in analysis_results:
@@ -560,8 +524,6 @@ def _get_figure_interpretations(analysis_results: dict) -> dict:
     ccm_df = analysis_results.get("ccm")
     dfa_df = analysis_results.get("dfa")
     se_df = analysis_results.get("sample_entropy")
-    cp_df = analysis_results.get("changepoints")
-
     # -- Group-level figures --
     interp["choice_trajectories"] = (
         "Rolling choice proportion over time, with vertical lines marking phase boundaries. "
@@ -699,26 +661,6 @@ def _get_figure_interpretations(analysis_results: dict) -> dict:
             f"state-dependent rather than globally linear."
         )
 
-    # -- Changepoint --
-    if isinstance(cp_df, pd.DataFrame) and len(cp_df) > 0:
-        cps_only = cp_df[cp_df["click_index"] >= 0]
-        n_cps = len(cps_only)
-        n_sess = cps_only["session_id"].nunique() if n_cps > 0 else 0
-        interp["changepoints_all"] = (
-            f"BOCPD-detected change points (red lines) overlaid on choice trajectories, "
-            f"with true phase boundaries (dashed). {n_cps} change points detected across "
-            f"{n_sess} sessions, with many clustering near the true boundaries."
-        )
-        alignment = analysis_results.get("boundary_alignment", {})
-        if alignment:
-            lags = [v.get("mean_lag_s", 0) for v in alignment.values()]
-            mean_lag = np.mean(lags) if lags else 0
-            interp["changepoint_alignment"] = (
-                f"Distribution of BOCPD change-point lag relative to true phase boundaries. "
-                f"Mean alignment lag of {abs(mean_lag):.1f}s confirms that the algorithm "
-                f"detects behavioral regime shifts close to the actual environmental transitions."
-            )
-
     # -- DFA / Fractal --
     if isinstance(dfa_df, pd.DataFrame) and len(dfa_df) > 0:
         full_dfa = dfa_df[dfa_df["scope"] == "full_session"]
@@ -788,7 +730,7 @@ def _get_figure_interpretations(analysis_results: dict) -> dict:
     # -- Matching law --
     mc = analysis_results.get("model_comparison")
     if isinstance(mc, pd.DataFrame) and len(mc) > 0:
-        matching_df = mc[mc["model"].isin(["strict_matching", "generalized_matching"])]
+        matching_df = mc[mc["model"] == "generalized_matching_law"]
         if len(matching_df) > 0:
             mean_s = matching_df["sensitivity"].mean()
             mean_r2 = matching_df["r_squared"].mean()

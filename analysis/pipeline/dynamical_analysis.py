@@ -6,8 +6,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import correlate
+import gc as _gc_mod
 import pyEDM
 from joblib import Parallel, delayed
+
+_MAX_JOBS = 1  # sequential — avoids memory pressure on laptops
+_BATCH_SIZE = 2  # small batches to limit peak memory
+
+
+def _batched_parallel(items, n_jobs=_MAX_JOBS, batch_size=_BATCH_SIZE):
+    """Run joblib Parallel in batches, calling gc.collect() between batches."""
+    all_results = []
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        batch_results = Parallel(n_jobs=n_jobs)(batch)
+        all_results.extend(batch_results)
+        _gc_mod.collect()
+    return all_results
 
 
 # ============================================================
@@ -24,9 +39,9 @@ def _subsample_signal(signal, target_n=200):
     return signal[indices]
 
 
-def _compute_best_E_for_session(events_df, sid, maxE=6, target_n=200):
+def _compute_best_E_for_session(sdf, sid, maxE=6, target_n=200):
     """Compute optimal embedding dimension for a single session. Returns (sid, best_E) or None."""
-    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    sdf = sdf.sort_values("timestamp_ms")
     signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
 
     if len(signal) < 30:
@@ -55,6 +70,8 @@ def _compute_best_E_for_session(events_df, sid, maxE=6, target_n=200):
 def run_dynamical_analysis(events_df: pd.DataFrame, config: dict,
                            output_dir: str) -> dict:
     """Run dynamical systems analyses."""
+    import gc as _gc
+
     results = {}
     fmt = config.get("plot_format", "png")
     fig_dir = os.path.join(output_dir, "figures", "dynamical")
@@ -62,56 +79,72 @@ def run_dynamical_analysis(events_df: pd.DataFrame, config: dict,
     os.makedirs(tables_dir, exist_ok=True)
 
     # State-space trajectories
+    print("  State-space trajectories...")
     _plot_state_space(events_df, config, fig_dir, fmt)
+    plt.close("all"); _gc.collect()
 
     # Choice autocorrelation
+    print("  Choice autocorrelation...")
     acf_results = _compute_choice_autocorrelation(events_df, max_lag=50)
     results["choice_autocorrelation"] = acf_results
     _plot_autocorrelation(acf_results, fig_dir, fmt, config)
+    plt.close("all"); _gc.collect()
 
     # Hysteresis analysis
+    print("  Hysteresis...")
     hyst_results = _compute_hysteresis(events_df, config)
     results["hysteresis"] = hyst_results
     if hyst_results:
         _plot_hysteresis(hyst_results, fig_dir, fmt, config)
+    plt.close("all"); _gc.collect()
 
     # Recurrence analysis with RQA metrics
+    print("  RQA...")
     rqa_results = _compute_rqa_all(events_df, config)
     results["rqa"] = rqa_results
     _plot_recurrence(events_df, config, fig_dir, fmt)
+    plt.close("all"); _gc.collect()
     if len(rqa_results) > 0:
         _plot_rqa_summary(rqa_results, config, fig_dir, fmt)
+    plt.close("all"); _gc.collect()
 
     # Pre-compute best_E for all sessions (Item 14)
+    print("  Computing best embedding dimensions...")
     if "rolling_choice_prop_a_clicks" in events_df.columns:
         session_ids = events_df["session_id"].unique()
-        best_E_results = Parallel(n_jobs=-1)(
-            delayed(_compute_best_E_for_session)(events_df, sid)
+        session_dfs = {sid: events_df[events_df["session_id"] == sid] for sid in session_ids}
+        best_E_results = _batched_parallel([
+            delayed(_compute_best_E_for_session)(session_dfs[sid], sid)
             for sid in session_ids
-        )
-        best_E_cache = {sid: E for sid, E in best_E_results if (sid, E) != (None, None)}
-        # Filter out None results
+        ])
         best_E_cache = {}
         for result in best_E_results:
             if result is not None:
                 best_E_cache[result[0]] = result[1]
+        del session_dfs; _gc.collect()
     else:
         best_E_cache = {}
 
     # EDM simplex projection (all participants)
+    print("  EDM simplex...")
     edm_results = _run_edm_simplex(events_df, config, fig_dir, fmt,
                                     tables_dir, best_E_cache)
     results["edm_simplex"] = edm_results
+    plt.close("all"); _gc.collect()
 
     # CCM: causal coupling between reward and choice
+    print("  CCM...")
     ccm_results = _run_ccm(events_df, config, fig_dir, fmt,
                            tables_dir, best_E_cache)
     results["ccm"] = ccm_results
+    plt.close("all"); _gc.collect()
 
     # S-Map: state-dependent nonlinearity
+    print("  S-Map...")
     smap_results = _run_smap(events_df, config, fig_dir, fmt,
                              tables_dir, best_E_cache)
     results["smap"] = smap_results
+    plt.close("all"); _gc.collect()
 
     return results
 
@@ -129,6 +162,9 @@ def _plot_state_space(events_df: pd.DataFrame, config: dict,
     phase_colors = {1: "Greys", 2: "Blues", 3: "Reds", 4: "Greens"}
     phase_line_colors = {1: "gray", 2: "dodgerblue", 3: "orangered", 4: "green"}
     session_ids = events_df["session_id"].unique()
+    # Cap at 24 subplots to prevent giant figures
+    if len(session_ids) > 24:
+        session_ids = session_ids[:24]
 
     n_cols = min(4, len(session_ids))
     n_rows = int(np.ceil(len(session_ids) / n_cols))
@@ -312,6 +348,9 @@ def _plot_recurrence(events_df: pd.DataFrame, config: dict,
         return
 
     session_ids = events_df["session_id"].unique()
+    # Cap at 24 subplots to prevent giant figures
+    if len(session_ids) > 24:
+        session_ids = session_ids[:24]
     threshold = 0.1
 
     n_cols = min(4, len(session_ids))
@@ -359,9 +398,9 @@ def _plot_recurrence(events_df: pd.DataFrame, config: dict,
 # EDM Simplex Projection
 # ============================================================
 
-def _edm_simplex_single_session(events_df, sid, best_E_cache, target_n=200):
+def _edm_simplex_single_session(sdf, sid, best_E_cache, target_n=200):
     """Run EDM simplex for a single session. Returns dict or None."""
-    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    sdf = sdf.sort_values("timestamp_ms")
     signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
 
     if len(signal) < 30:
@@ -435,10 +474,11 @@ def _run_edm_simplex(events_df: pd.DataFrame, config: dict,
             return existing_df
 
     # Parallelize across sessions (Item 12)
-    results = Parallel(n_jobs=-1)(
-        delayed(_edm_simplex_single_session)(events_df, sid, best_E_cache)
+    session_dfs = {sid: events_df[events_df["session_id"] == sid] for sid in sessions_to_compute}
+    results = _batched_parallel([
+        delayed(_edm_simplex_single_session)(session_dfs[sid], sid, best_E_cache)
         for sid in sessions_to_compute
-    )
+    ])
 
     # Collect results
     edm_rows = []
@@ -474,6 +514,9 @@ def _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt):
     if len(plot_data) == 0:
         return
 
+    # Cap at 24 subplots
+    if len(session_ids) > 24:
+        session_ids = session_ids[:24]
     n_cols = min(4, len(session_ids))
     n_rows = int(np.ceil(len(session_ids) / n_cols))
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
@@ -513,20 +556,25 @@ def _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt):
 
 
 def _plot_edm_simplex_from_df(edm_df, events_df, config, fig_dir, fmt, best_E_cache):
-    """Re-generate EDM simplex plot from cached CSV (no pyEDM recomputation)."""
-    # When loading from cache we don't have prediction traces, so we re-run
-    # simplex for plot generation only. This is fast with subsampled data.
-    session_ids = edm_df["session_id"].unique()
-    results = Parallel(n_jobs=-1)(
-        delayed(_edm_simplex_single_session)(events_df, sid, best_E_cache)
-        for sid in session_ids
-    )
-    plot_data = {}
-    for r in results:
-        if r is not None:
-            pred_out = r.pop("pred_out")
-            plot_data[r["session_id"]] = (pred_out, r["best_E"], r["rho"])
-    _plot_edm_simplex(session_ids, plot_data, config, fig_dir, fmt)
+    """Plot EDM simplex summary from cached CSV without re-running pyEDM."""
+    # Plot a summary bar chart of rho values instead of re-running all simplex
+    if len(edm_df) == 0:
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].hist(edm_df["rho"].dropna(), bins=15, color="steelblue",
+                 edgecolor="white", alpha=0.8)
+    axes[0].set_xlabel("Simplex rho")
+    axes[0].set_ylabel("Count")
+    axes[0].set_title("EDM Simplex Prediction Accuracy")
+    axes[1].hist(edm_df["best_E"].dropna(), bins=range(1, 8), color="teal",
+                 edgecolor="white", alpha=0.8, align="left")
+    axes[1].set_xlabel("Best Embedding Dimension (E)")
+    axes[1].set_ylabel("Count")
+    axes[1].set_title("Optimal Embedding Dimension")
+    plt.tight_layout()
+    fig.savefig(os.path.join(fig_dir, f"edm_simplex_all.{fmt}"),
+                dpi=config.get("dpi", 150))
+    plt.close(fig)
 
 
 # ============================================================
@@ -745,87 +793,114 @@ def _plot_rqa_summary(rqa_df: pd.DataFrame, config: dict,
 # Convergent Cross Mapping (CCM)
 # ============================================================
 
-def _ccm_single_session(events_df, sid, best_E_cache, target_n=200):
-    """Run CCM for a single session. Returns list of row dicts."""
-    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
-    choice = sdf["rolling_choice_prop_a_clicks"].dropna().values
-    reward = sdf["rolling_reward_rate_clicks"].dropna().values
+def _ccm_single_session(sdf, sid, best_E_cache, target_n=200,
+                        phase_boundaries=None):
+    """Run CCM for a single session, within each phase separately.
 
-    n = min(len(choice), len(reward))
-    if n < 50:
-        return []
+    If phase_boundaries is provided, CCM is run within each phase
+    to respect stationarity. Otherwise falls back to full-session.
+    Returns list of row dicts.
+    """
+    sdf = sdf.sort_values("timestamp_ms")
 
-    choice = choice[:n]
-    reward = reward[:n]
-
-    # Subsample (Item 11)
-    if n > target_n:
-        step = n / target_n
-        indices = np.round(np.arange(0, n, step)).astype(int)
-        indices = indices[indices < n]
-        choice = choice[indices]
-        reward = reward[indices]
-        n = len(choice)
-
-    edm_df = pd.DataFrame({
-        "time": np.arange(n),
-        "choice": choice,
-        "reward": reward,
-    })
+    # Build list of (phase_id, phase_sdf) segments
+    segments = []
+    if (phase_boundaries and "elapsed_time_s" in sdf.columns
+            and "phase_id" in sdf.columns):
+        for pb in phase_boundaries:
+            pid = pb["id"]
+            phase_sdf = sdf[sdf["phase_id"] == pid]
+            if len(phase_sdf) >= 50:
+                segments.append((pid, phase_sdf))
+    if not segments:
+        # Fallback: full session as single segment
+        segments = [(0, sdf)]
 
     ccm_rows = []
 
-    try:
-        # Use cached best_E (Item 14)
-        best_E = best_E_cache.get(sid)
-        if best_E is None:
-            simplex_out = pyEDM.EmbedDimension(
-                dataFrame=edm_df, columns="choice", target="choice",
-                lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
-                maxE=6, showPlot=False
-            )
-            best_E = int(simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
-        best_E = max(2, best_E)
+    for phase_id, seg_df in segments:
+        choice = seg_df["rolling_choice_prop_a_clicks"].dropna().values
+        reward = seg_df["rolling_reward_rate_clicks"].dropna().values
 
-        # Reduced library sizes: 5 evenly spaced values (Item 13)
-        lib_sizes = np.linspace(max(best_E + 2, 20), n - 10,
-                                5).astype(int)
-        lib_sizes = np.unique(lib_sizes)
+        n = min(len(choice), len(reward))
+        if n < 50:
+            continue
 
-        for lib_size in lib_sizes:
-            try:
-                ccm_out = pyEDM.CCM(
-                    dataFrame=edm_df,
-                    columns="choice", target="reward",
-                    E=best_E,
-                    libSizes=f"{lib_size}",
-                    sample=20,  # Reduced from 50 (Item 13)
-                    showPlot=False
+        choice = choice[:n]
+        reward = reward[:n]
+
+        # Subsample if needed
+        if n > target_n:
+            step = n / target_n
+            indices = np.round(np.arange(0, n, step)).astype(int)
+            indices = indices[indices < n]
+            choice = choice[indices]
+            reward = reward[indices]
+            n = len(choice)
+
+        edm_df = pd.DataFrame({
+            "time": np.arange(n),
+            "choice": choice,
+            "reward": reward,
+        })
+
+        try:
+            # Use cached best_E
+            best_E = best_E_cache.get(sid)
+            if best_E is None:
+                simplex_out = pyEDM.EmbedDimension(
+                    dataFrame=edm_df, columns="choice", target="choice",
+                    lib=f"1 {n // 2}", pred=f"{n // 2 + 1} {n}",
+                    maxE=6, showPlot=False
                 )
-                rho_cr = ccm_out["choice:reward"].mean()
+                best_E = int(
+                    simplex_out.loc[simplex_out["rho"].idxmax(), "E"])
+            best_E = max(2, best_E)
 
-                ccm_out2 = pyEDM.CCM(
-                    dataFrame=edm_df,
-                    columns="reward", target="choice",
-                    E=best_E,
-                    libSizes=f"{lib_size}",
-                    sample=20,  # Reduced from 50 (Item 13)
-                    showPlot=False
-                )
-                rho_rc = ccm_out2["reward:choice"].mean()
-
-                ccm_rows.append({
-                    "session_id": sid,
-                    "E": best_E,
-                    "lib_size": lib_size,
-                    "rho_reward_causes_choice": rho_cr,
-                    "rho_choice_causes_reward": rho_rc,
-                })
-            except Exception:
+            # Library sizes: 5 evenly spaced values
+            min_lib = max(best_E + 2, 20)
+            max_lib = n - 10
+            if max_lib <= min_lib:
                 continue
+            lib_sizes = np.linspace(min_lib, max_lib, 5).astype(int)
+            lib_sizes = np.unique(lib_sizes)
 
-    except Exception as e:
-        print(f"  CCM failed for session {sid}: {e}")
+            for lib_size in lib_sizes:
+                try:
+                    ccm_out = pyEDM.CCM(
+                        dataFrame=edm_df,
+                        columns="choice", target="reward",
+                        E=best_E,
+                        libSizes=f"{lib_size}",
+                        sample=20,
+                        showPlot=False
+                    )
+                    rho_cr = ccm_out["choice:reward"].mean()
+
+                    ccm_out2 = pyEDM.CCM(
+                        dataFrame=edm_df,
+                        columns="reward", target="choice",
+                        E=best_E,
+                        libSizes=f"{lib_size}",
+                        sample=20,
+                        showPlot=False
+                    )
+                    rho_rc = ccm_out2["reward:choice"].mean()
+
+                    ccm_rows.append({
+                        "session_id": sid,
+                        "phase_id": phase_id,
+                        "E": best_E,
+                        "lib_size": lib_size,
+                        "n_obs": n,
+                        "rho_reward_causes_choice": rho_cr,
+                        "rho_choice_causes_reward": rho_rc,
+                    })
+                except Exception:
+                    continue
+
+        except Exception as e:
+            print(f"  CCM failed for session {sid} phase {phase_id}: {e}")
 
     return ccm_rows
 
@@ -844,25 +919,36 @@ def _run_ccm(events_df: pd.DataFrame, config: dict,
 
     session_ids = events_df["session_id"].unique()
     csv_path = os.path.join(tables_dir, "ccm_results.csv")
+    phase_boundaries = config.get("phase_boundaries", [])
 
     # Session-level result caching (Item 16)
+    # Check if existing cache has phase_id column (within-phase analysis)
     existing_df = pd.DataFrame()
     sessions_to_compute = list(session_ids)
     if os.path.exists(csv_path):
         existing_df = pd.read_csv(csv_path)
-        already_done = set(existing_df["session_id"].unique())
-        sessions_to_compute = [s for s in session_ids if s not in already_done]
-        if len(sessions_to_compute) == 0:
-            print("  CCM: all sessions cached, skipping computation.")
-            if len(existing_df) > 0:
-                _plot_ccm(existing_df, config, fig_dir, fmt)
-            return existing_df
+        # Force recompute if old cache lacks phase_id (full-session analysis)
+        if "phase_id" not in existing_df.columns:
+            print("  CCM: recomputing with within-phase analysis...")
+            existing_df = pd.DataFrame()
+        else:
+            already_done = set(existing_df["session_id"].unique())
+            sessions_to_compute = [s for s in session_ids
+                                   if s not in already_done]
+            if len(sessions_to_compute) == 0:
+                print("  CCM: all sessions cached, skipping computation.")
+                if len(existing_df) > 0:
+                    _plot_ccm(existing_df, config, fig_dir, fmt)
+                return existing_df
 
     # Parallelize across sessions (Item 12)
-    results = Parallel(n_jobs=-1)(
-        delayed(_ccm_single_session)(events_df, sid, best_E_cache)
+    session_dfs = {sid: events_df[events_df["session_id"] == sid]
+                   for sid in sessions_to_compute}
+    results = _batched_parallel([
+        delayed(_ccm_single_session)(session_dfs[sid], sid, best_E_cache,
+                                     phase_boundaries=phase_boundaries)
         for sid in sessions_to_compute
-    )
+    ])
 
     # Flatten results
     ccm_rows = []
@@ -890,6 +976,9 @@ def _run_ccm(events_df: pd.DataFrame, config: dict,
 def _plot_ccm(ccm_df: pd.DataFrame, config: dict, fig_dir: str, fmt: str):
     """Plot CCM convergence curves."""
     session_ids = ccm_df["session_id"].unique()
+    # Cap at 24 subplots
+    if len(session_ids) > 24:
+        session_ids = session_ids[:24]
 
     n_cols = min(4, len(session_ids))
     n_rows = int(np.ceil(len(session_ids) / n_cols))
@@ -933,9 +1022,9 @@ def _plot_ccm(ccm_df: pd.DataFrame, config: dict, fig_dir: str, fmt: str):
 # S-Map: State-Dependent Nonlinearity
 # ============================================================
 
-def _smap_single_session(events_df, sid, best_E_cache, target_n=200):
+def _smap_single_session(sdf, sid, best_E_cache, target_n=200):
     """Run S-Map for a single session. Returns dict or None."""
-    sdf = events_df[events_df["session_id"] == sid].sort_values("timestamp_ms")
+    sdf = sdf.sort_values("timestamp_ms")
     signal = sdf["rolling_choice_prop_a_clicks"].dropna().values
 
     if len(signal) < 50:
@@ -1028,10 +1117,11 @@ def _run_smap(events_df: pd.DataFrame, config: dict,
             return existing_df
 
     # Parallelize across sessions (Item 12)
-    results = Parallel(n_jobs=-1)(
-        delayed(_smap_single_session)(events_df, sid, best_E_cache)
+    session_dfs = {sid: events_df[events_df["session_id"] == sid] for sid in sessions_to_compute}
+    results = _batched_parallel([
+        delayed(_smap_single_session)(session_dfs[sid], sid, best_E_cache)
         for sid in sessions_to_compute
-    )
+    ])
 
     smap_rows = [r for r in results if r is not None]
     new_df = pd.DataFrame(smap_rows)

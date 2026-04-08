@@ -1,6 +1,7 @@
 """Hidden Markov Models for identifying latent behavioral states."""
 
 import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -90,7 +91,41 @@ def fit_hmm_models(events_df: pd.DataFrame, config: dict,
         _plot_state_phase_alignment(events_df, all_state_sequences,
                                     config, fig_dir, fmt)
 
+    # Cache state sequences as JSON for figure regeneration
+    cache_path = os.path.join(output_dir, "tables", "hmm_state_sequences.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    _save_state_sequences(all_state_sequences, cache_path)
+
     return results_df, all_state_sequences
+
+
+def _save_state_sequences(state_sequences: dict, path: str):
+    """Serialize HMM state sequences to JSON (numpy arrays -> lists)."""
+    serializable = {}
+    for sid, seq in state_sequences.items():
+        serializable[str(sid)] = {
+            "states": seq["states"].tolist(),
+            "n_states": int(seq["n_states"]),
+            "transition_matrix": seq["transition_matrix"].tolist(),
+            "means": seq["means"].tolist(),
+        }
+    with open(path, "w") as f:
+        json.dump(serializable, f)
+
+
+def load_state_sequences(path: str) -> dict:
+    """Deserialize HMM state sequences from cached JSON."""
+    with open(path) as f:
+        raw = json.load(f)
+    sequences = {}
+    for sid, seq in raw.items():
+        sequences[sid] = {
+            "states": np.array(seq["states"]),
+            "n_states": seq["n_states"],
+            "transition_matrix": np.array(seq["transition_matrix"]),
+            "means": np.array(seq["means"]),
+        }
+    return sequences
 
 
 def summarize_hmm_states(hmm_state_sequences: dict, output_dir: str) -> pd.DataFrame:
