@@ -14,10 +14,15 @@ firebase_service_account_key: service-account-key.json
 firebase_collection: sessions
 
 # Local data directory (used if data_source is local)
-local_data_dir: ./data
+# Paths are relative to the analysis/ directory (parent of scripts_notebooks/)
+local_data_dir: ./data/01_raw_data
 
 # --- Output ---
-output_dir: ./outputs
+# Tables/analytic outputs go to data/; figures go to figures/
+output_dir: ./data/03_analytic_outputs
+tables_dir: ./data/03_analytic_outputs
+transformed_data_dir: ./data/02_transformed_data
+figures_dir: ./figures
 plot_format: png  # png, svg, pdf
 dpi: 150
 

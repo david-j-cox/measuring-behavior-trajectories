@@ -13,7 +13,10 @@ import sys
 import pandas as pd
 import yaml
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Resolve paths relative to analysis/ (one level up from scripts_notebooks/)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ANALYSIS_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)
 
 from pipeline.figures.figure_generation import generate_all_figures
 
@@ -25,15 +28,26 @@ def main():
                         help="Figure number(s) to regenerate (default: all)")
     args = parser.parse_args()
 
-    with open("config.yaml") as f:
+    with open(os.path.join(SCRIPT_DIR, "config.yaml")) as f:
         config = yaml.safe_load(f)
 
-    output_dir = config.get("output_dir", "./outputs")
-    tables_dir = os.path.join(output_dir, "tables")
+    # Resolve config paths relative to analysis/ directory
+    for key in ("output_dir", "tables_dir", "transformed_data_dir",
+                "figures_dir", "local_data_dir"):
+        if key in config and not os.path.isabs(config[key]):
+            config[key] = os.path.join(ANALYSIS_DIR, config[key])
+
+    tables_dir = config.get("tables_dir",
+                            os.path.join(ANALYSIS_DIR, "data", "03_analytic_outputs"))
+    transformed_dir = config.get("transformed_data_dir",
+                                  os.path.join(ANALYSIS_DIR, "data", "02_transformed_data"))
+    figures_dir = config.get("figures_dir",
+                              os.path.join(ANALYSIS_DIR, "figures"))
+    output_dir = config.get("output_dir", tables_dir)
 
     print("Loading cached data...")
-    events_df = pd.read_csv(os.path.join(tables_dir, "events_processed.csv"))
-    metrics_df = pd.read_csv(os.path.join(tables_dir, "session_metrics.csv"))
+    events_df = pd.read_csv(os.path.join(transformed_dir, "events_processed.csv"))
+    metrics_df = pd.read_csv(os.path.join(transformed_dir, "session_metrics.csv"))
     print(f"  {events_df['session_id'].nunique()} sessions, "
           f"{len(events_df)} events")
 
@@ -41,10 +55,7 @@ def main():
     analysis_results = {}
 
     # Model comparison
-    mc_path = os.path.join(output_dir, "figures", "tables",
-                           "model_comparison.csv")
-    if not os.path.exists(mc_path):
-        mc_path = os.path.join(tables_dir, "model_comparison.csv")
+    mc_path = os.path.join(tables_dir, "model_comparison.csv")
     if os.path.exists(mc_path):
         analysis_results["model_comparison"] = pd.read_csv(mc_path)
         print(f"  Model comparison: {len(analysis_results['model_comparison'])} rows")
@@ -77,7 +88,8 @@ def main():
 
     print("\nGenerating figures...")
     generate_all_figures(events_df, metrics_df, analysis_results, config,
-                         output_dir, only=args.figure)
+                         output_dir, only=args.figure,
+                         figures_dir=figures_dir)
     print("Done.")
 
 

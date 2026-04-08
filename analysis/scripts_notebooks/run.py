@@ -24,6 +24,11 @@ import os
 import sys
 import time
 
+# Resolve paths relative to analysis/ (one level up from scripts_notebooks/)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ANALYSIS_DIR = os.path.dirname(SCRIPT_DIR)
+sys.path.insert(0, SCRIPT_DIR)
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -39,7 +44,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run empirical paper analysis pipeline."
     )
-    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--config",
+                        default=os.path.join(SCRIPT_DIR, "config.yaml"))
     parser.add_argument("--input", default=None)
     parser.add_argument("--output", default=None)
     parser.add_argument("--models-only", action="store_true",
@@ -57,11 +63,28 @@ def main():
     if args.output:
         config["output_dir"] = args.output
 
-    output_dir = config.get("output_dir", "./outputs")
+    # Resolve config paths relative to analysis/ directory
+    for key in ("output_dir", "tables_dir", "transformed_data_dir",
+                "figures_dir", "local_data_dir"):
+        if key in config and not os.path.isabs(config[key]):
+            config[key] = os.path.join(ANALYSIS_DIR, config[key])
+
+    output_dir = config.get("output_dir",
+                            os.path.join(ANALYSIS_DIR, "data", "03_analytic_outputs"))
+    tables_dir = config.get("tables_dir", output_dir)
+    transformed_dir = config.get("transformed_data_dir",
+                                  os.path.join(ANALYSIS_DIR, "data", "02_transformed_data"))
+    figures_dir = config.get("figures_dir",
+                              os.path.join(ANALYSIS_DIR, "figures"))
+
     ensure_dirs(output_dir)
-    paper_dir = os.path.join(output_dir, "figures")
-    for subdir in ["tables", "figures", "supplementary"]:
-        os.makedirs(os.path.join(paper_dir, subdir), exist_ok=True)
+    for d in [tables_dir, transformed_dir, figures_dir]:
+        os.makedirs(d, exist_ok=True)
+
+    # Legacy compatibility: set paper_dir for figure generation
+    paper_dir = figures_dir
+    for subdir in ["tables", "supplementary"]:
+        os.makedirs(os.path.join(output_dir, subdir), exist_ok=True)
 
     t0 = time.time()
     print("\n" + "=" * 60)
@@ -167,7 +190,7 @@ def main():
         # Combine all model results
         model_comparison = pd.concat(model_dfs, ignore_index=True)
         model_comparison.to_csv(
-            os.path.join(paper_dir, "tables", "model_comparison.csv"),
+            os.path.join(tables_dir, "model_comparison.csv"),
             index=False
         )
         analysis_results["model_comparison"] = model_comparison
@@ -228,7 +251,7 @@ def main():
         generate_all_figures,
     )
     generate_all_figures(events_df, metrics_df, analysis_results, config,
-                         output_dir)
+                         output_dir, figures_dir=figures_dir)
     plt.close("all")
     gc.collect()
 
@@ -236,7 +259,8 @@ def main():
     elapsed = time.time() - t0
     print(f"\n{'=' * 60}")
     print(f"EMPIRICAL PAPER PIPELINE COMPLETE  ({elapsed:.1f}s)")
-    print(f"Outputs: {paper_dir}")
+    print(f"Tables:  {tables_dir}")
+    print(f"Figures: {figures_dir}")
     print(f"{'=' * 60}")
 
 

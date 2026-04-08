@@ -10,7 +10,6 @@ __pycache__/
 *.pyc
 *.pyo
 analysis/venv/
-analysis/outputs/
 *.egg-info/
 
 # Firebase service account key
@@ -19,8 +18,8 @@ service-account-key.json
 # Manuscript
 manuscript/
 
-# Data and outputs
-analysis/data/
+# Legacy output directories (superseded by analysis/data/ and analysis/figures/)
+analysis/outputs/
 analysis/pipeline_outputs/
 
 # Reference articles (PDFs)

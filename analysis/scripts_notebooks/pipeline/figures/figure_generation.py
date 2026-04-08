@@ -156,7 +156,8 @@ def _bootstrap_ci(data_by_bin, n_boot=1000, ci=95, rng=None):
 
 def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
                          analysis_results: dict, config: dict,
-                         output_dir: str, only: list = None):
+                         output_dir: str, only: list = None,
+                         figures_dir: str = None):
     """Generate empirical paper figures.
 
     Parameters
@@ -164,9 +165,15 @@ def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
     only : list of int, optional
         If provided, generate only these figure numbers (e.g. [5, 7]).
         If None, generate all figures.
+    figures_dir : str, optional
+        Direct path to save figures. If None, falls back to
+        output_dir/figures/figures for backward compatibility.
     """
     _style()
-    fig_dir = os.path.join(output_dir, "figures", "figures")
+    if figures_dir is not None:
+        fig_dir = figures_dir
+    else:
+        fig_dir = os.path.join(output_dir, "figures", "figures")
     os.makedirs(fig_dir, exist_ok=True)
 
     fmt = "png"
