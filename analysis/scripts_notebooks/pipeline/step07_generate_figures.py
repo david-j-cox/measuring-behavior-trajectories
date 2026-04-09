@@ -6,7 +6,7 @@ Produces 8 primary figures:
   1. Phase transitions in choice behavior (group rolling P(A))
   2. Model comparison (mean AIC, 14 models by family)
   3. Phase-transition dynamics (adaptation lags at boundaries)
-  4. Hysteresis in choice allocation (choice vs latent advantage)
+  4. Hysteresis in choice allocation (choice vs unobserved value advantage)
   5. HMM state characteristics (choice x ICI state space)
   6. HMM phase alignment (state bands + phase boundaries)
   7. Convergent cross-mapping (CCM convergence)
@@ -318,7 +318,7 @@ def figure2_model_comparison(analysis_results, fig_dir, fmt, config):
 
     ax.set_yticks(list(y_pos))
     ax.set_yticklabels(agg["label"].values, fontsize=_TICK_FS)
-    ax.set_xscale("symlog", linthresh=100)
+    # ax.set_xscale("symlog", linthresh=100)  # disabled for linear scale
     ax.set_xlabel("Mean AIC (lower = better fit)", fontsize=_LABEL_FS,
                   labelpad=_LABELPAD)
     sns.despine(ax=ax, right=True, top=True)
@@ -330,7 +330,7 @@ def figure2_model_comparison(analysis_results, fig_dir, fmt, config):
     handles.append(Line2D([0], [0], marker="o", color="none",
                           markerfacecolor="black", markersize=4,
                           alpha=0.5, label="Individual"))
-    ax.legend(handles=handles, loc="lower right", fontsize=_LEGEND_FS,
+    ax.legend(handles=handles, loc="center left", fontsize=_LEGEND_FS,
               frameon=True, edgecolor="lightgray")
 
     plt.tight_layout()
@@ -502,7 +502,7 @@ def figure4_hysteresis(events_df, fig_dir, fmt, config):
     """Continuous trajectory through all phases showing hysteresis loops.
 
     Two subplots:
-      A. x = latent advantage (V_A - V_B)
+      A. x = unobserved value advantage (V_A - V_B)
       B. x = local reward-rate difference (R_A - R_B)
     The trajectory is binned by time, producing a continuous path with
     arrows showing temporal direction. If equilibrium-seeking models are
@@ -522,7 +522,7 @@ def figure4_hysteresis(events_df, fig_dir, fmt, config):
         {
             "col": "latent_advantage_pre",
             "xlabel": "$V_A - V_B$",
-            "title": "A. Latent Value",
+            "title": "A. Unobserved Value",
         },
         {
             "col_a": "local_reward_rate_a",
@@ -544,7 +544,7 @@ def figure4_hysteresis(events_df, fig_dir, fmt, config):
     x_specs_norm = [
         {"col": "latent_advantage_pre",
          "xlabel": "$V_{Higher} - V_{Lower}$",
-         "title": "C. Latent Value (Normalized)"},
+         "title": "C. Unobserved Value (Normalized)"},
         {"col_a": "local_reward_rate_a", "col_b": "local_reward_rate_b",
          "xlabel": "$R_{Higher} - R_{Lower}$",
          "title": "D. Local Reinforcement Rate (Normalized)"},
@@ -733,7 +733,7 @@ def figure4_hysteresis_supplement(events_df, fig_dir, fmt, config):
     """Individual participant hysteresis trajectories.
 
     6 figures, each with 5 rows x 4 cols (2 participants per row,
-    latent value + reward rate for each).
+    unobserved value + reward rate for each).
     """
     pbs = config.get("phase_boundaries", [])
     if len(pbs) < 2:
@@ -760,7 +760,7 @@ def figure4_hysteresis_supplement(events_df, fig_dir, fmt, config):
     rows_per_fig = 5
     n_figs = int(np.ceil(len(sids) / rows_per_fig))
 
-    # Column specs: raw latent, raw reward, normalized latent, normalized reward
+    # Column specs: raw unobserved, raw reward, normalized unobserved, normalized reward
     col_specs = [
         {"base": x_specs[0], "normalize": False,
          "xlabel": "$V_A - V_B$", "ylabel": "P(A)"},
@@ -882,8 +882,8 @@ def figure4_hysteresis_supplement(events_df, fig_dir, fmt, config):
                     ax.set_title(short_id, fontsize=9, loc="left")
 
         # Column headers on top row
-        col_headers = ["Raw: Latent Value", "Raw: Reinforcement Rate",
-                       "Normalized: Latent Value", "Normalized: Reinforcement Rate"]
+        col_headers = ["Raw: Unobserved Value", "Raw: Reinforcement Rate",
+                       "Normalized: Unobserved Value", "Normalized: Reinforcement Rate"]
         for c, header in enumerate(col_headers):
             axes[0, c].text(0.5, 1.15, header, transform=axes[0, c].transAxes,
                             ha="center", fontsize=11, fontweight="bold")
