@@ -2,46 +2,56 @@
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.optimize import minimize
 
 
-def fit_rl_models(events_df: pd.DataFrame, config: dict) -> pd.DataFrame:
-    """Fit RL models per session. Returns model comparison table."""
-    n_starts = config.get("rl_models", {}).get("n_starts", 10)
-    phase_boundaries = config.get("phase_boundaries", [])
+def _fit_session_rl(sid, sdf, n_starts, phase_boundaries):
+    """Fit all RL models for a single session."""
+    sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
+    choices = sdf["choice_a"].values
+    rewards = sdf["reward_outcome"].values
+
+    if len(choices) < 20:
+        return []
+
+    n_obs = len(choices)
     rows = []
 
-    for sid, sdf in events_df.groupby("session_id"):
-        sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
-        choices = sdf["choice_a"].values
-        rewards = sdf["reward_outcome"].values
+    result = _fit_qlearning(choices, rewards, n_starts)
+    rows.append(_rl_row(sid, "q_learning", result, n_obs))
 
-        if len(choices) < 20:
-            continue
+    result = _fit_dual_alpha(choices, rewards, n_starts)
+    rows.append(_rl_row(sid, "q_dual_alpha", result, n_obs))
 
-        # Basic Q-learning (alpha, beta)
-        result = _fit_qlearning(choices, rewards, n_starts)
-        rows.append(_rl_row(sid, "q_learning", result, len(choices)))
+    result = _fit_forgetting_q(choices, rewards, n_starts)
+    rows.append(_rl_row(sid, "q_forgetting", result, n_obs))
 
-        # Dual learning rate (alpha_pos, alpha_neg, beta)
-        result = _fit_dual_alpha(choices, rewards, n_starts)
-        rows.append(_rl_row(sid, "q_dual_alpha", result, len(choices)))
+    result = _fit_dynamic_alpha(choices, rewards, n_starts)
+    rows.append(_rl_row(sid, "q_dynamic_alpha", result, n_obs))
 
-        # Forgetting Q-learning (alpha, beta, forget)
-        result = _fit_forgetting_q(choices, rewards, n_starts)
-        rows.append(_rl_row(sid, "q_forgetting", result, len(choices)))
+    if "phase_id" in sdf.columns and len(phase_boundaries) > 0:
+        phases = sdf["phase_id"].values
+        result = _fit_phase_aware_q(choices, rewards, phases,
+                                    phase_boundaries, n_starts)
+        rows.append(_rl_row(sid, "q_phase_aware", result, n_obs))
 
-        # Dynamic learning rate (alpha_base, alpha_gain, beta, decay)
-        result = _fit_dynamic_alpha(choices, rewards, n_starts)
-        rows.append(_rl_row(sid, "q_dynamic_alpha", result, len(choices)))
+    return rows
 
-        # Phase-aware Q-learning (separate alpha per phase)
-        if "phase_id" in sdf.columns and len(phase_boundaries) > 0:
-            phases = sdf["phase_id"].values
-            result = _fit_phase_aware_q(choices, rewards, phases,
-                                        phase_boundaries, n_starts)
-            rows.append(_rl_row(sid, "q_phase_aware", result, len(choices)))
 
+def fit_rl_models(events_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Fit RL models per session (parallelized). Returns model comparison table."""
+    n_starts = config.get("rl_models", {}).get("n_starts", 10)
+    phase_boundaries = config.get("phase_boundaries", [])
+    n_jobs = config.get("n_jobs", 2)
+
+    sessions = [(sid, sdf) for sid, sdf in events_df.groupby("session_id")]
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_session_rl)(sid, sdf, n_starts, phase_boundaries)
+        for sid, sdf in sessions
+    )
+
+    rows = [row for session_rows in results for row in session_rows]
     return pd.DataFrame(rows)
 
 

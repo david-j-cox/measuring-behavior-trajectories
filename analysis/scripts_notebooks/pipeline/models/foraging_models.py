@@ -8,92 +8,95 @@ Three models derived from the marginal value theorem (Charnov, 1976):
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.optimize import minimize
+
+
+def _fit_session_foraging(sid, sdf):
+    """Fit all three foraging models for a single session."""
+    sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
+    if len(sdf) < 50:
+        return []
+
+    choices = sdf["choice_a"].values.astype(float)
+    rewards = sdf["reward_outcome"].values.astype(float)
+    n = len(choices)
+    rows = []
+
+    # --- Model 1: MVT threshold ---
+    best_nll_mvt = np.inf
+    best_params_mvt = {}
+    for window in [5, 10, 15, 20, 30]:
+        nll = _mvt_nll(choices, rewards, window)
+        if nll < best_nll_mvt:
+            best_nll_mvt = nll
+            best_params_mvt = {"window": window}
+    rows.append({
+        "session_id": sid,
+        "model": "mvt_threshold",
+        "n_params": 1,
+        "nll": best_nll_mvt,
+        "aic": 2 * 1 + 2 * best_nll_mvt,
+        "bic": 1 * np.log(n) + 2 * best_nll_mvt,
+        "n_obs": n,
+        **best_params_mvt,
+    })
+
+    # --- Model 2: Patch-leaving threshold ---
+    result = minimize(
+        lambda p: _patch_leaving_nll(choices, rewards, p[0]),
+        x0=[0.5], bounds=[(0.01, 0.99)], method="L-BFGS-B"
+    )
+    nll_pl = result.fun
+    rows.append({
+        "session_id": sid,
+        "model": "patch_leaving",
+        "n_params": 1,
+        "nll": nll_pl,
+        "aic": 2 * 1 + 2 * nll_pl,
+        "bic": 1 * np.log(n) + 2 * nll_pl,
+        "n_obs": n,
+        "threshold": result.x[0],
+    })
+
+    # --- Model 3: Softmax MVT ---
+    best_nll_smvt = np.inf
+    best_params_smvt = {}
+    for window in [5, 10, 15, 20, 30]:
+        result = minimize(
+            lambda p, w=window: _softmax_mvt_nll(
+                choices, rewards, w, p[0]),
+            x0=[2.0], bounds=[(0.01, 50.0)], method="L-BFGS-B"
+        )
+        if result.fun < best_nll_smvt:
+            best_nll_smvt = result.fun
+            best_params_smvt = {"window": window, "beta": result.x[0]}
+    rows.append({
+        "session_id": sid,
+        "model": "softmax_mvt",
+        "n_params": 2,
+        "nll": best_nll_smvt,
+        "aic": 2 * 2 + 2 * best_nll_smvt,
+        "bic": 2 * np.log(n) + 2 * best_nll_smvt,
+        "n_obs": n,
+        **best_params_smvt,
+    })
+
+    return rows
 
 
 def fit_foraging_models(events_df: pd.DataFrame,
                         config: dict) -> pd.DataFrame:
-    """Fit all three foraging models per session."""
-    rows = []
+    """Fit all three foraging models per session (parallelized)."""
+    n_jobs = config.get("n_jobs", 2)
 
-    for sid, sdf in events_df.groupby("session_id"):
-        sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
-        if len(sdf) < 50:
-            continue
+    sessions = [(sid, sdf) for sid, sdf in events_df.groupby("session_id")]
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_session_foraging)(sid, sdf)
+        for sid, sdf in sessions
+    )
 
-        choices = sdf["choice_a"].values.astype(float)
-        rewards = sdf["reward_outcome"].values.astype(float)
-        n = len(choices)
-
-        # --- Model 1: MVT threshold ---
-        # Switch when current patch return < average return * threshold_ratio
-        # One free parameter: window (how many recent trials to estimate rates)
-        best_nll_mvt = np.inf
-        best_params_mvt = {}
-
-        for window in [5, 10, 15, 20, 30]:
-            nll = _mvt_nll(choices, rewards, window)
-            if nll < best_nll_mvt:
-                best_nll_mvt = nll
-                best_params_mvt = {"window": window}
-
-        rows.append({
-            "session_id": sid,
-            "model": "mvt_threshold",
-            "n_params": 1,
-            "nll": best_nll_mvt,
-            "aic": 2 * 1 + 2 * best_nll_mvt,
-            "bic": 1 * np.log(n) + 2 * best_nll_mvt,
-            "n_obs": n,
-            **best_params_mvt,
-        })
-
-        # --- Model 2: Patch-leaving threshold ---
-        # Switch when current patch return < fixed threshold
-        # One free parameter: threshold
-        result = minimize(
-            lambda p: _patch_leaving_nll(choices, rewards, p[0]),
-            x0=[0.5], bounds=[(0.01, 0.99)], method="L-BFGS-B"
-        )
-        nll_pl = result.fun
-        rows.append({
-            "session_id": sid,
-            "model": "patch_leaving",
-            "n_params": 1,
-            "nll": nll_pl,
-            "aic": 2 * 1 + 2 * nll_pl,
-            "bic": 1 * np.log(n) + 2 * nll_pl,
-            "n_obs": n,
-            "threshold": result.x[0],
-        })
-
-        # --- Model 3: Softmax MVT ---
-        # P(stay on current) = sigmoid(beta * (current_rate - avg_rate))
-        # Two free parameters: window, beta
-        best_nll_smvt = np.inf
-        best_params_smvt = {}
-
-        for window in [5, 10, 15, 20, 30]:
-            result = minimize(
-                lambda p, w=window: _softmax_mvt_nll(
-                    choices, rewards, w, p[0]),
-                x0=[2.0], bounds=[(0.01, 50.0)], method="L-BFGS-B"
-            )
-            if result.fun < best_nll_smvt:
-                best_nll_smvt = result.fun
-                best_params_smvt = {"window": window, "beta": result.x[0]}
-
-        rows.append({
-            "session_id": sid,
-            "model": "softmax_mvt",
-            "n_params": 2,
-            "nll": best_nll_smvt,
-            "aic": 2 * 2 + 2 * best_nll_smvt,
-            "bic": 2 * np.log(n) + 2 * best_nll_smvt,
-            "n_obs": n,
-            **best_params_smvt,
-        })
-
+    rows = [row for session_rows in results for row in session_rows]
     return pd.DataFrame(rows)
 
 

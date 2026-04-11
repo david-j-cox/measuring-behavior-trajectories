@@ -14,6 +14,7 @@ Each model produces both:
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.optimize import minimize
 
 
@@ -21,45 +22,52 @@ from scipy.optimize import minimize
 # Public API
 # ============================================================
 
-def fit_historical_models(events_df: pd.DataFrame, config: dict) -> pd.DataFrame:
-    """Fit all historical dynamics models per session."""
-    n_starts = config.get("rl_models", {}).get("n_starts", 10)
-    window = config.get("rolling_window_clicks", 20)
+def _fit_session(sid, sdf, n_starts, window):
+    """Fit all five historical models for a single session."""
+    sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
+    choices = sdf["choice_a"].values
+    rewards = sdf["reward_outcome"].values
+
+    if len(choices) < 30:
+        return []
+
+    n_obs = len(choices)
     rows = []
 
-    for sid, sdf in events_df.groupby("session_id"):
-        sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
-        choices = sdf["choice_a"].values
-        rewards = sdf["reward_outcome"].values
+    result = _fit_melioration(choices, rewards, n_starts)
+    rows.append(_model_row(sid, "melioration", result, n_obs))
 
-        if len(choices) < 30:
-            continue
+    local_rates = _get_local_rates(sdf, window)
+    result = _fit_kinetic(choices, local_rates, n_starts)
+    rows.append(_model_row(sid, "kinetic", result, n_obs))
 
-        n_obs = len(choices)
+    phases = sdf["phase_id"].values if "phase_id" in sdf.columns else None
+    result = _fit_momentum(choices, rewards, phases, n_starts)
+    rows.append(_model_row(sid, "behavioral_momentum", result, n_obs))
 
-        # Melioration (Herrnstein & Vaughan, 1980; Vaughan, 1981)
-        result = _fit_melioration(choices, rewards, n_starts)
-        rows.append(_model_row(sid, "melioration", result, n_obs))
+    ici_s = sdf["ici_s"].values if "ici_s" in sdf.columns else None
+    result = _fit_hill_climbing(choices, rewards, ici_s, n_starts)
+    rows.append(_model_row(sid, "hill_climbing", result, n_obs))
 
-        # Kinetic model (Myerson & Miezin, 1980)
-        local_rates = _get_local_rates(sdf, window)
-        result = _fit_kinetic(choices, local_rates, n_starts)
-        rows.append(_model_row(sid, "kinetic", result, n_obs))
+    result = _fit_ratio_invariance(choices, rewards, n_starts)
+    rows.append(_model_row(sid, "ratio_invariance", result, n_obs))
 
-        # Behavioral momentum (Nevin, 1983, 1992)
-        phases = sdf["phase_id"].values if "phase_id" in sdf.columns else None
-        result = _fit_momentum(choices, rewards, phases, n_starts)
-        rows.append(_model_row(sid, "behavioral_momentum", result, n_obs))
+    return rows
 
-        # Hill-climbing (Hinson & Staddon, 1983)
-        ici_s = sdf["ici_s"].values if "ici_s" in sdf.columns else None
-        result = _fit_hill_climbing(choices, rewards, ici_s, n_starts)
-        rows.append(_model_row(sid, "hill_climbing", result, n_obs))
 
-        # Ratio invariance (Staddon, 1988)
-        result = _fit_ratio_invariance(choices, rewards, n_starts)
-        rows.append(_model_row(sid, "ratio_invariance", result, n_obs))
+def fit_historical_models(events_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Fit all historical dynamics models per session (parallelized)."""
+    n_starts = config.get("rl_models", {}).get("n_starts", 10)
+    window = config.get("rolling_window_clicks", 20)
+    n_jobs = config.get("n_jobs", 2)
 
+    sessions = [(sid, sdf) for sid, sdf in events_df.groupby("session_id")]
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_session)(sid, sdf, n_starts, window)
+        for sid, sdf in sessions
+    )
+
+    rows = [row for session_rows in results for row in session_rows]
     return pd.DataFrame(rows)
 
 

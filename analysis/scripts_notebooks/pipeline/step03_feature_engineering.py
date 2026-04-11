@@ -16,14 +16,15 @@ def compute_derived_variables(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df["choice_a"] = (df["chosen_option"] == "A").astype(int)
     df["choice_b"] = (df["chosen_option"] == "B").astype(int)
 
-    # Verified switch flag
+    # Verified switch flag (vectorized)
     df["switch_flag_verified"] = 0
-    for sid, grp in df.groupby("session_id"):
-        idx = grp.index
-        switches = (grp["chosen_option"].values[1:] != grp["chosen_option"].values[:-1]).astype(int)
-        df.loc[idx[1:], "switch_flag_verified"] = switches
+    shifted = df.groupby("session_id")["chosen_option"].shift(1)
+    mask = shifted.notna()
+    df.loc[mask, "switch_flag_verified"] = (
+        df.loc[mask, "chosen_option"] != shifted[mask]
+    ).astype(int)
 
-    # Run lengths (recomputed)
+    # Run lengths (vectorized)
     df["run_length_current"] = _compute_run_lengths(df)
 
     # Previous run length
@@ -146,70 +147,72 @@ def _compute_time_since_event(df: pd.DataFrame, event_col: str, event_val) -> pd
 def _rolling_by_clicks(df: pd.DataFrame, col: str, window: int,
                        func: str = "mean") -> pd.Series:
     """Rolling statistic over a click-based window, per session."""
-    result = pd.Series(np.nan, index=df.index)
-    for sid, grp in df.groupby("session_id"):
-        idx = grp.index
-        if func == "mean":
-            vals = grp[col].rolling(window, min_periods=1).mean()
-        elif func == "sum":
-            vals = grp[col].rolling(window, min_periods=1).sum()
-        result.loc[idx] = vals.values
-    return result
+    grouped = df.groupby("session_id")[col]
+    if func == "mean":
+        return grouped.transform(lambda x: x.rolling(window, min_periods=1).mean())
+    elif func == "sum":
+        return grouped.transform(lambda x: x.rolling(window, min_periods=1).sum())
+    return pd.Series(np.nan, index=df.index)
 
 
 def _rolling_by_time(df: pd.DataFrame, col: str, window_s: float) -> pd.Series:
-    """Rolling mean over a time-based window, per session."""
+    """Rolling mean over a time-based window, per session.
+
+    Uses pandas time-based rolling with a TimedeltaIndex for vectorized
+    computation instead of a per-row Python loop.
+    """
     result = pd.Series(np.nan, index=df.index)
     for sid, grp in df.groupby("session_id"):
         idx = grp.index
-        times = grp["elapsed_time_s"].values
-        vals_col = grp[col].values
-        vals = np.full(len(times), np.nan)
-        for i in range(len(times)):
-            mask = (times >= times[i] - window_s) & (times <= times[i])
-            vals[i] = np.mean(vals_col[mask])
-        result.loc[idx] = vals
+        # Create a temporary series indexed by timedelta for time-based rolling
+        td_index = pd.to_timedelta(grp["elapsed_time_s"].values, unit="s")
+        ts = pd.Series(grp[col].values, index=td_index)
+        rolled = ts.rolling(f"{window_s}s", min_periods=1).mean()
+        result.loc[idx] = rolled.values
     return result
 
 
 def _compute_local_reward_estimates(df: pd.DataFrame, window: int) -> pd.DataFrame:
-    """Compute local reward rate per option in recent window."""
-    df["local_count_a"] = 0.0
-    df["local_count_b"] = 0.0
-    df["local_rewards_a"] = 0.0
-    df["local_rewards_b"] = 0.0
-    df["local_reward_rate_a"] = np.nan
-    df["local_reward_rate_b"] = np.nan
-    df["choice_bias_recent"] = np.nan
+    """Compute local reward rate per option in recent window.
 
-    for sid, grp in df.groupby("session_id"):
-        idx = grp.index
-        ca = grp["choice_a"].values
-        cb = grp["choice_b"].values
-        rw = grp["reward_outcome"].values
-        n = len(ca)
+    Uses vectorized pandas rolling sums instead of per-row Python loops.
+    """
+    grouped = df.groupby("session_id")
 
-        for col_name, arr_func in [
-            ("local_count_a", lambda i: np.sum(ca[max(0,i-window+1):i+1])),
-            ("local_count_b", lambda i: np.sum(cb[max(0,i-window+1):i+1])),
-            ("local_rewards_a", lambda i: np.sum((ca * rw)[max(0,i-window+1):i+1])),
-            ("local_rewards_b", lambda i: np.sum((cb * rw)[max(0,i-window+1):i+1])),
-        ]:
-            vals = np.array([arr_func(i) for i in range(n)])
-            df.loc[idx, col_name] = vals
+    # Rolling counts and reward sums per option via vectorized rolling
+    df["local_count_a"] = grouped["choice_a"].transform(
+        lambda x: x.rolling(window, min_periods=1).sum()
+    )
+    df["local_count_b"] = grouped["choice_b"].transform(
+        lambda x: x.rolling(window, min_periods=1).sum()
+    )
 
-        count_a = df.loc[idx, "local_count_a"].values
-        count_b = df.loc[idx, "local_count_b"].values
-        rew_a = df.loc[idx, "local_rewards_a"].values
-        rew_b = df.loc[idx, "local_rewards_b"].values
+    reward_a = df["choice_a"] * df["reward_outcome"]
+    reward_b = df["choice_b"] * df["reward_outcome"]
 
-        df.loc[idx, "local_reward_rate_a"] = np.where(count_a > 0, rew_a / count_a, np.nan)
-        df.loc[idx, "local_reward_rate_b"] = np.where(count_b > 0, rew_b / count_b, np.nan)
+    df["local_rewards_a"] = reward_a.groupby(df["session_id"]).transform(
+        lambda x: x.rolling(window, min_periods=1).sum()
+    )
+    df["local_rewards_b"] = reward_b.groupby(df["session_id"]).transform(
+        lambda x: x.rolling(window, min_periods=1).sum()
+    )
 
-        total = count_a + count_b
-        df.loc[idx, "choice_bias_recent"] = np.where(
-            total > 0, (count_a - count_b) / total, 0
-        )
+    # Compute rates (NaN where count is 0)
+    df["local_reward_rate_a"] = np.where(
+        df["local_count_a"] > 0,
+        df["local_rewards_a"] / df["local_count_a"],
+        np.nan
+    )
+    df["local_reward_rate_b"] = np.where(
+        df["local_count_b"] > 0,
+        df["local_rewards_b"] / df["local_count_b"],
+        np.nan
+    )
+
+    total = df["local_count_a"] + df["local_count_b"]
+    df["choice_bias_recent"] = np.where(
+        total > 0, (df["local_count_a"] - df["local_count_b"]) / total, 0
+    )
 
     return df
 

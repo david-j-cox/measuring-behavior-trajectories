@@ -185,9 +185,14 @@ def _standardize_types(df: pd.DataFrame) -> pd.DataFrame:
     """Ensure correct dtypes for key columns."""
     int_cols = [
         "timestamp_ms", "click_index", "reward_outcome", "points_earned",
-        "cumulative_score", "time_since_prev_click_ms", "phase_id",
-        "active_bonus_pulse", "run_length", "time_since_last_switch_ms",
-        "switch_flag", "total_clicks_so_far", "total_rewards_so_far"
+        "cumulative_score", "phase_id",
+        "active_bonus_pulse", "run_length",
+        "total_clicks_so_far", "total_rewards_so_far"
+    ]
+    # These columns legitimately have NaN on the first click of each session;
+    # keep them as float so NaN is preserved rather than coerced to 0.
+    nullable_int_cols = [
+        "time_since_prev_click_ms", "time_since_last_switch_ms", "switch_flag"
     ]
     float_cols = [
         "latent_value_a_pre", "latent_value_b_pre",
@@ -199,12 +204,15 @@ def _standardize_types(df: pd.DataFrame) -> pd.DataFrame:
     for col in int_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+    for col in nullable_int_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
     for col in float_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     for col in str_cols:
         if col in df.columns:
-            df[col] = df[col].astype(str).fillna("")
+            df[col] = df[col].fillna("").astype(str)
 
     return df
 

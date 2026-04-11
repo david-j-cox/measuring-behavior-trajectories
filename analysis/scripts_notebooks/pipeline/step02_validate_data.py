@@ -122,7 +122,7 @@ def validate_events(df: pd.DataFrame, config: dict) -> Tuple[pd.DataFrame, pd.Da
 
         # Minimum duration
         min_dur_s = config.get("min_session_duration_s", 300)
-        dur_s = sdf_sorted["timestamp_ms"].max() / 1000
+        dur_s = (sdf_sorted["timestamp_ms"].max() - sdf_sorted["timestamp_ms"].min()) / 1000
         if dur_s < min_dur_s:
             reports.append({
                 "session_id": sid, "check": "min_duration",

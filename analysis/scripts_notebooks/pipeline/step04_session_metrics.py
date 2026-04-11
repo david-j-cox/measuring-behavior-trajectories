@@ -25,8 +25,8 @@ def compute_session_metrics(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             "overall_reward_rate": sdf["reward_outcome"].mean(),
             "overall_switch_rate": sdf["switch_flag_verified"].mean() if "switch_flag_verified" in sdf else 0,
             "total_switches": sdf["switch_flag_verified"].sum() if "switch_flag_verified" in sdf else 0,
-            "mean_run_length": sdf["run_length_current"].mean() if "run_length_current" in sdf else 0,
-            "median_run_length": sdf["run_length_current"].median() if "run_length_current" in sdf else 0,
+            "mean_run_length": _mean_completed_run_length(sdf) if "run_length_current" in sdf else 0,
+            "median_run_length": _median_completed_run_length(sdf) if "run_length_current" in sdf else 0,
             "mean_ici_s": sdf["ici_s"].mean() if "ici_s" in sdf else 0,
             "median_ici_s": sdf["ici_s"].median() if "ici_s" in sdf else 0,
             "choice_prop_a": sdf["choice_a"].mean() if "choice_a" in sdf else 0.5,
@@ -59,7 +59,7 @@ def compute_session_metrics(df: pd.DataFrame, config: dict) -> pd.DataFrame:
                 row[f"{prefix}_choice_prop_a"] = phase_df["choice_a"].mean()
                 row[f"{prefix}_reward_rate"] = phase_df["reward_outcome"].mean()
                 row[f"{prefix}_switch_rate"] = phase_df["switch_flag_verified"].mean() if "switch_flag_verified" in phase_df else 0
-                row[f"{prefix}_mean_run_length"] = phase_df["run_length_current"].mean() if "run_length_current" in phase_df else 0
+                row[f"{prefix}_mean_run_length"] = _mean_completed_run_length(phase_df) if "run_length_current" in phase_df else 0
                 row[f"{prefix}_mean_ici_s"] = phase_df["ici_s"].mean() if "ici_s" in phase_df else 0
                 if "choice_optimal" in phase_df.columns:
                     row[f"{prefix}_proportion_optimal"] = phase_df["choice_optimal"].mean()
@@ -76,6 +76,33 @@ def compute_session_metrics(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def _completed_run_lengths(sdf: pd.DataFrame) -> np.ndarray:
+    """Extract lengths of completed runs from the cumulative run counter.
+
+    A run is "completed" at the click just before a switch, or at the last
+    click of the session. For example, run_length_current = [1,2,3,1,2,1]
+    yields completed runs [3, 2, 1].
+    """
+    rl = sdf["run_length_current"].values
+    if len(rl) == 0:
+        return np.array([])
+    # A run ends wherever the next value resets to 1, or at the end
+    boundaries = np.where(np.diff(rl) < 0)[0]  # indices just before reset
+    lengths = list(rl[boundaries])
+    lengths.append(rl[-1])  # final run
+    return np.array(lengths)
+
+
+def _mean_completed_run_length(sdf: pd.DataFrame) -> float:
+    lengths = _completed_run_lengths(sdf)
+    return float(np.mean(lengths)) if len(lengths) > 0 else 0.0
+
+
+def _median_completed_run_length(sdf: pd.DataFrame) -> float:
+    lengths = _completed_run_lengths(sdf)
+    return float(np.median(lengths)) if len(lengths) > 0 else 0.0
 
 
 def _compute_adaptation_lag(sdf: pd.DataFrame, phase_boundaries: dict,

@@ -2,42 +2,53 @@
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.optimize import minimize
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, accuracy_score
 
 
-def fit_all_baselines(events_df: pd.DataFrame) -> pd.DataFrame:
-    """Fit all baseline models per session. Returns model comparison table."""
+def _fit_session_baselines(sid, sdf):
+    """Fit all baseline models for a single session."""
+    sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
+    choices = sdf["choice_a"].values
+
+    if len(choices) < 10:
+        return []
+
     rows = []
-    for sid, sdf in events_df.groupby("session_id"):
-        sdf = sdf.sort_values("timestamp_ms").reset_index(drop=True)
-        choices = sdf["choice_a"].values
 
-        if len(choices) < 10:
-            continue
+    random_nll = -np.sum(np.log(0.5) * np.ones(len(choices)))
+    rows.append(_model_row(sid, "random", 0, random_nll, len(choices)))
 
-        # Random model
-        random_nll = -np.sum(np.log(0.5) * np.ones(len(choices)))
-        rows.append(_model_row(sid, "random", 0, random_nll, len(choices)))
+    bias_result = _fit_bias(choices)
+    rows.append(_model_row(sid, "bias", 1, bias_result["nll"], len(choices)))
 
-        # Bias model
-        bias_result = _fit_bias(choices)
-        rows.append(_model_row(sid, "bias", 1, bias_result["nll"], len(choices)))
+    if "reward_outcome" in sdf.columns:
+        wsls_result = _fit_wsls(choices, sdf["reward_outcome"].values)
+        rows.append(_model_row(sid, "wsls", 2, wsls_result["nll"], len(choices)))
 
-        # Win-stay lose-shift
-        if "reward_outcome" in sdf.columns:
-            wsls_result = _fit_wsls(choices, sdf["reward_outcome"].values)
-            rows.append(_model_row(sid, "wsls", 2, wsls_result["nll"], len(choices)))
+    logistic_result = _fit_logistic(sdf)
+    if logistic_result is not None:
+        rows.append(_model_row(
+            sid, "logistic", logistic_result["n_params"],
+            logistic_result["nll"], len(choices)
+        ))
 
-        # Logistic regression on recent history
-        logistic_result = _fit_logistic(sdf)
-        if logistic_result is not None:
-            rows.append(_model_row(
-                sid, "logistic", logistic_result["n_params"],
-                logistic_result["nll"], len(choices)
-            ))
+    return rows
 
+
+def fit_all_baselines(events_df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+    """Fit all baseline models per session (parallelized)."""
+    n_jobs = 2 if config is None else config.get("n_jobs", 2)
+
+    sessions = [(sid, sdf) for sid, sdf in events_df.groupby("session_id")]
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_fit_session_baselines)(sid, sdf)
+        for sid, sdf in sessions
+    )
+
+    rows = [row for session_rows in results for row in session_rows]
     return pd.DataFrame(rows)
 
 
@@ -76,18 +87,16 @@ def _fit_wsls(choices: np.ndarray, rewards: np.ndarray) -> dict:
 
         ll = 0.0
         for t in range(1, len(choices)):
-            stayed = int(choices[t] == choices[t - 1])
             if rewards[t - 1] == 1:
                 p_stay = p_stay_win
             else:
                 p_stay = 1 - p_shift_lose
 
-            p_choice_a = p_stay if choices[t] == choices[t - 1] else (1 - p_stay)
-            # Map to actual choice probability
-            if choices[t] == 1:
-                ll += np.log(max(p_choice_a, 1e-10))
+            # Likelihood based on whether subject repeated or switched
+            if choices[t] == choices[t - 1]:
+                ll += np.log(max(p_stay, 1e-10))
             else:
-                ll += np.log(max(1 - p_choice_a, 1e-10))
+                ll += np.log(max(1 - p_stay, 1e-10))
 
         return -ll
 

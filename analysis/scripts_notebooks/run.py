@@ -147,7 +147,7 @@ def main():
         # Baseline models
         print("\n--- Baseline models ---")
         from pipeline.models.baseline_models import fit_all_baselines
-        baseline_results = fit_all_baselines(events_df)
+        baseline_results = fit_all_baselines(events_df, config)
         # Drop logistic (not a process model)
         baseline_results = baseline_results[
             baseline_results["model"] != "logistic"
