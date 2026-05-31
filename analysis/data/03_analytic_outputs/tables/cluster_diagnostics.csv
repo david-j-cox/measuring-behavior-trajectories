@@ -1,0 +1,6 @@
+cluster,n,cov_condition_number,spherical,mv_normal,hz_statistic,hz_p_value
+0,4,,insufficient_n,insufficient_n,,
+1,24,20.107441488828975,no,yes,0.0,0.5003
+2,6,,insufficient_n,insufficient_n,,
+3,19,34.38565145558314,no,yes,0.0,0.5002
+4,7,,insufficient_n,insufficient_n,,

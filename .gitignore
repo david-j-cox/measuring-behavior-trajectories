@@ -1,5 +1,8 @@
 .DS_Store
 *.log
+*.claude
+.claude/
+node_modules/
 experiment/node_modules/
 
 # Firebase credentials (use firebase-config.example.js as template)

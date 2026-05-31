@@ -391,7 +391,8 @@ def predict_trajectories(events_df: pd.DataFrame, config: dict,
     window = config.get("rolling_window_clicks", 20)
     all_predictions = {}
 
-    for model_name in ["melioration", "kinetic", "behavioral_momentum", "hill_climbing"]:
+    for model_name in ["melioration", "kinetic", "behavioral_momentum",
+                        "hill_climbing", "ratio_invariance"]:
         model_fits = fit_results[fit_results["model"] == model_name]
         if len(model_fits) == 0:
             continue
@@ -428,6 +429,10 @@ def predict_trajectories(events_df: pd.DataFrame, config: dict,
                 p_a_seq = _hill_climbing_predict(
                     choices, rewards, ici_s,
                     fit_row.get("A_recency", 1.0), fit_row.get("beta", 5.0))
+            elif model_name == "ratio_invariance":
+                p_a_seq = _ratio_invariance_predict(
+                    choices, rewards,
+                    fit_row.get("omega", 0.0), fit_row.get("beta", 5.0))
             else:
                 continue
 
@@ -554,6 +559,29 @@ def _hill_climbing_predict(choices, rewards, ici_s, A, beta):
             T_A = dt
         elif choices[t] == 0 and rewards[t] == 1:
             T_B = dt
+
+    return p_a_seq
+
+
+def _ratio_invariance_predict(choices, rewards, omega, beta):
+    """Per-trial P(A) sequence for ratio invariance (mirrors NLL logic)."""
+    alpha_lr = 0.1
+    R_A, R_B = 0.5, 0.5
+    eps = 1e-6
+    p_a_seq = np.zeros(len(choices))
+
+    for t in range(len(choices)):
+        denom = R_A + R_B - 2 * omega
+        if abs(denom) < eps:
+            s_star = 0.5
+        else:
+            s_star = np.clip((R_A - omega) / denom, 0.01, 0.99)
+        p_a_seq[t] = _logistic(beta * (s_star - 0.5))
+
+        if choices[t] == 1:
+            R_A = (1 - alpha_lr) * R_A + alpha_lr * rewards[t]
+        else:
+            R_B = (1 - alpha_lr) * R_B + alpha_lr * rewards[t]
 
     return p_a_seq
 

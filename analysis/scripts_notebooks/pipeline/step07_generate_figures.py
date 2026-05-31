@@ -2,15 +2,17 @@
 'Testing Behavior Dynamic Models to Account for Choice Trajectories
  in Non-Stationary Environments'
 
-Produces 8 primary figures:
+Produces 10 primary figures:
   1. Phase transitions in choice behavior (group rolling P(A))
   2. Model comparison (mean AIC, 14 models by family)
   3. Phase-transition dynamics (adaptation lags at boundaries)
   4. Hysteresis in choice allocation (choice vs unobserved value advantage)
-  5. HMM state characteristics (choice x ICI state space)
-  6. HMM phase alignment (state bands + phase boundaries)
-  7. Convergent cross-mapping (CCM convergence)
-  8. Recurrence quantification analysis (RQA summary)
+  5. Optimality analysis (observed vs optimal allocation by phase)
+  6. HMM state characteristics (choice x ICI state space)
+  7. HMM phase alignment (state bands + phase boundaries)
+  8. Convergent cross-mapping (CCM convergence)
+  9. Recurrence plots (individual recurrence matrices)
+ 10. RQA metrics by phase (box plots of RQA summary statistics)
 """
 
 import os
@@ -52,6 +54,10 @@ _MODEL_FAMILIES = {
     "hmm_2state": "HMM",
     "hmm_3state": "HMM",
     "hmm_4state": "HMM",
+    "simplex_expanding": "EDM",
+    "simplex_phase1_rest": "EDM",
+    "smap_linear": "EDM",
+    "smap_best_theta": "EDM",
 }
 
 _MODEL_LABELS = {
@@ -73,6 +79,10 @@ _MODEL_LABELS = {
     "hmm_2state": "HMM (2-state)",
     "hmm_3state": "HMM (3-state)",
     "hmm_4state": "HMM (4-state)",
+    "simplex_expanding": "Simplex (expanding)",
+    "simplex_phase1_rest": "Simplex (Phase 1 \u2192 rest)",
+    "smap_linear": "S-Map (linear, \u03b8 = 0)",
+    "smap_best_theta": "S-Map (best \u03b8)",
 }
 
 _FAMILY_GRAYS = {
@@ -201,15 +211,19 @@ def generate_all_figures(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
         figure4_hysteresis(events_df, fig_dir, fmt, config)
         figure4_hysteresis_supplement(events_df, fig_dir, fmt, config)
     if _run(5):
-        figure5_hmm_state_characteristics(analysis_results, fig_dir, fmt,
-                                          config)
+        figure5_optimality(events_df, metrics_df, fig_dir, fmt, config)
     if _run(6):
-        figure6_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
-                                    config)
+        figure6_hmm_state_characteristics(analysis_results, fig_dir, fmt,
+                                          config)
     if _run(7):
-        figure7_ccm(analysis_results, fig_dir, fmt, config)
+        figure7_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
+                                    config)
     if _run(8):
-        figure8_rqa(analysis_results, events_df, fig_dir, fmt, config)
+        figure8_ccm(analysis_results, fig_dir, fmt, config)
+    if _run(9):
+        figure9_rqa(analysis_results, events_df, fig_dir, fmt, config)
+    if _run(10):
+        figure10_rqa_by_phase(analysis_results, fig_dir, fmt, config)
 
     which = f"figure(s) {only}" if only else "all figures"
     print(f"  {which} saved to {fig_dir}")
@@ -909,11 +923,114 @@ def figure4_hysteresis_supplement(events_df, fig_dir, fmt, config):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 5 – HMM State Characteristics
+# Figure 5 – Optimality Analysis
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure5_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
-    """State-space scatter of HMM states in choice x ICI space."""
+def figure5_optimality(events_df, metrics_df, fig_dir, fmt, config):
+    """Observed vs optimal allocation for Phases 2 and 3.
+
+    Each marker is one participant. Dashed diagonal = perfect optimality.
+    Gray band = +/-5% of optimal. Phase 2 (A advantage) on left,
+    Phase 3 (B advantage) on right.
+    """
+    phase_boundaries = config.get("phase_boundaries", [])
+
+    # Need per-session, per-phase choice proportions toward the advantaged option
+    # Phase 2: A is advantaged -> proportion toward A
+    # Phase 3: B is advantaged -> proportion toward B (= 1 - prop_a)
+
+    # Also need the "optimal" proportion from the latent values
+    panels = []
+    for pid, adv_label in [(2, "Phase 2"), (3, "Phase 3")]:
+        col_prop = f"phase{pid}_choice_prop_a"
+        col_opt = f"phase{pid}_proportion_optimal"
+        if col_prop not in metrics_df.columns:
+            continue
+
+        observed = []
+        optimal = []
+        for _, row in metrics_df.iterrows():
+            if pd.isna(row.get(col_prop)):
+                continue
+            prop_a = row[col_prop]
+            # Compute optimal from mean ICI and latent values in that phase
+            sid = row["session_id"]
+            sdf = events_df[(events_df["session_id"] == sid) &
+                            (events_df["phase_id"] == pid)]
+            if len(sdf) == 0:
+                continue
+
+            # Observed proportion toward advantaged option
+            if pid == 2:
+                obs_adv = prop_a
+            else:
+                obs_adv = 1.0 - prop_a
+
+            # Optimal proportion toward advantaged option from latent values
+            if ("latent_value_a_pre" in sdf.columns and
+                    "latent_value_b_pre" in sdf.columns):
+                lv_a = sdf["latent_value_a_pre"].mean()
+                lv_b = sdf["latent_value_b_pre"].mean()
+                total_lv = lv_a + lv_b
+                if total_lv > 0:
+                    if pid == 2:
+                        opt_adv = lv_a / total_lv
+                    else:
+                        opt_adv = lv_b / total_lv
+                else:
+                    opt_adv = 0.5
+            else:
+                opt_adv = 0.5
+
+            observed.append(obs_adv)
+            optimal.append(opt_adv)
+
+        if observed:
+            panels.append((adv_label, np.array(observed), np.array(optimal)))
+
+    if not panels:
+        print("  Figure 5 skipped: no optimality data.")
+        return
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(5 * len(panels), 5))
+    if len(panels) == 1:
+        axes = [axes]
+
+    for ax, (label, obs, opt) in zip(axes, panels):
+        # Diagonal and ±5% band
+        ax.plot([0.3, 1.0], [0.3, 1.0], ls="--", color="black", alpha=0.6,
+                lw=1)
+        ax.fill_between([0.3, 1.0], [0.25, 0.95], [0.35, 1.05],
+                        color="gray", alpha=0.15)
+
+        ax.scatter(opt, obs, s=30, color="gray", edgecolors="black",
+                   linewidths=0.5, alpha=0.7, zorder=3)
+
+        ax.set_xlabel("Optimal P(Advantaged Option)", fontsize=_LABEL_FS)
+        ax.set_ylabel("Observed P(Advantaged Option)", fontsize=_LABEL_FS)
+        ax.set_title(label, fontsize=_TITLE_FS, fontweight="bold")
+        ax.set_xlim(0.3, 1.0)
+        ax.set_ylim(0.3, 1.0)
+        ax.set_aspect("equal")
+        sns.despine(ax=ax)
+
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure5_optimality.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 6 – HMM State Characteristics
+# ═══════════════════════════════════════════════════════════════════════════
+
+def figure6_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
+    """HMM state profiles: 3x2 grid split by best model (4-state vs 3-state).
+
+    Left column: participants best fit by 4-state HMM
+    Right column: participants best fit by 3-state HMM
+    Row 1: P(Choose A) bar chart with swarmplot
+    Row 2: ICI bar chart with swarmplot
+    Row 3: Reinforcement rate bar chart with swarmplot
+    """
     hmm_seqs = analysis_results.get("hmm_state_sequences", {})
     hmm_summary = analysis_results.get("hmm_state_summary")
 
@@ -921,82 +1038,195 @@ def figure5_hmm_state_characteristics(analysis_results, fig_dir, fmt, config):
         print("  Figure 6 skipped: no HMM results.")
         return
 
-    fig, axes = plt.subplots(2, 1, figsize=(8, 10))
-    fig.subplots_adjust(hspace=0.3)
+    # We need events_df for ICI - load from config paths
+    import yaml
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    ANALYSIS_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+    transformed_dir = os.path.join(ANALYSIS_DIR, "data",
+                                   "02_transformed_data")
+    events_path = os.path.join(transformed_dir, "events_processed.csv")
+    if os.path.exists(events_path):
+        import pandas as _pd
+        events_df = _pd.read_csv(events_path)
+    else:
+        events_df = None
 
-    # (A) Scatter plot of mean_choice_a vs mean_reward by state label
-    ax = axes[0]
-    if hmm_summary is not None and len(hmm_summary) > 0:
-        per_session = hmm_summary[hmm_summary["session_id"] != "GROUP_MEAN"]
-        for i, label_name in enumerate(
-                sorted(per_session["label"].unique())):
-            subset = per_session[per_session["label"] == label_name]
-            ax.scatter(subset["mean_choice_a"], subset["mean_reward"],
-                       s=30, alpha=0.5,
-                       color=_STATE_GRAYS[i % len(_STATE_GRAYS)],
-                       marker=_STATE_MARKERS[i % len(_STATE_MARKERS)],
-                       label=label_name, edgecolors="white", linewidth=0.5)
+    # Determine best n_states per participant from cached sequences
+    sid_nstates = {}
+    for sid, seq in hmm_seqs.items():
+        sid_nstates[sid] = (seq["n_states"] if isinstance(
+            seq["n_states"], int) else int(seq["n_states"]))
 
-        ax.set_xlabel("Mean P(Choose A)", fontsize=_LABEL_FS,
-                      labelpad=_LABELPAD)
-        ax.set_ylabel("Mean Reinforcement Rate", fontsize=_LABEL_FS,
-                      labelpad=_LABELPAD)
-        ax.legend(fontsize=_LEGEND_FS, loc="center left",
-                  bbox_to_anchor=(1.05, 0.4), borderaxespad=0)
-    sns.despine(ax=ax)
-    ax.set_title("A. HMM States in\nChoice \u00d7 Reinforcement Space",
-                 fontsize=_TITLE_FS, fontweight="bold", loc="left")
+    per_session = hmm_summary[
+        hmm_summary["session_id"] != "GROUP_MEAN"].copy()
 
-    # (B) Group-average emission means per state label with 95% CI
-    ax = axes[1]
-    if hmm_summary is not None and len(hmm_summary) > 0:
-        per_session = hmm_summary[hmm_summary["session_id"] != "GROUP_MEAN"]
-        state_labels = sorted(per_session["label"].unique())
-        x = np.arange(len(state_labels))
-        means, cis = [], []
-        for lbl in state_labels:
-            vals = per_session.loc[per_session["label"] == lbl,
-                                   "mean_choice_a"].dropna().values
-            means.append(np.mean(vals))
-            sem = np.std(vals, ddof=1) / np.sqrt(len(vals)) if len(vals) > 1 else 0
-            cis.append(1.96 * sem)
+    # Compute per-state ICI from events + state assignments
+    ici_rows = []
+    reward_rows = []
+    if events_df is not None:
+        for sid, seq in hmm_seqs.items():
+            sdf = events_df[events_df["session_id"] == sid].sort_values(
+                "timestamp_ms")
+            states = np.array(seq["states"])
+            n_st = sid_nstates[sid]
+            choices = sdf["choice_a"].values[:len(states)]
+            ici = (sdf["ici_s"].values[:len(states)]
+                   if "ici_s" in sdf.columns else None)
+            rewards = sdf["reward_outcome"].values[:len(states)]
 
-        ax.bar(x, means, yerr=cis, color="white", edgecolor="black",
-               width=0.6, capsize=4, error_kw={"lw": 1.2, "capthick": 1.2})
+            # Rank states by mean choice A
+            state_choice = []
+            for s in range(n_st):
+                mask = states == s
+                state_choice.append(
+                    choices[mask].mean() if mask.sum() > 0 else 0.5)
+            rank_order = np.argsort(state_choice)
 
-        # Overlay individual participant values
-        for i, lbl in enumerate(state_labels):
-            vals = per_session.loc[per_session["label"] == lbl,
-                                   "mean_choice_a"].dropna().values
-            jitter = np.random.default_rng(i).uniform(
-                -0.2, 0.2, len(vals))
-            ax.scatter(x[i] + jitter, vals, s=10, alpha=0.4,
-                       color="black", edgecolors="none", zorder=4)
+            for rank, s in enumerate(rank_order):
+                mask = states == s
+                if mask.sum() < 3:
+                    continue
+                row = {"session_id": sid, "n_states": n_st,
+                       "state_rank": rank}
+                if ici is not None:
+                    row["mean_ici"] = np.nanmedian(ici[mask])
+                row["mean_reward"] = rewards[mask].mean()
+                row["mean_choice_a"] = choices[mask].mean()
+                ici_rows.append(row)
 
-        ax.set_xticks(x)
-        ax.set_xticklabels(state_labels, fontsize=_TICK_FS, rotation=15,
-                           ha="right")
-        ax.set_ylabel("Mean P(Choose A)", fontsize=_LABEL_FS,
-                      labelpad=_LABELPAD)
-        ax.axhline(0.5, color="gray", ls=":", alpha=0.3)
-    ax.set_title("B. Group-Average State Profiles",
-                 fontsize=_TITLE_FS, fontweight="bold", loc="left")
-    sns.despine(ax=ax)
+    ici_df = pd.DataFrame(ici_rows) if ici_rows else None
+
+    groups = [
+        (4, "4-State HMM", ["Exploiting B", "B-Biased Exploring",
+                             "A-Biased Exploring", "Exploiting A"]),
+        (3, "3-State HMM", ["Exploiting B", "Exploring/Switching",
+                             "Exploiting A"]),
+    ]
+
+    panel_labels = ["A", "B", "C", "D", "E", "F", "G", "H"]
+
+    fig, axes = plt.subplots(4, 2, figsize=(12, 20), sharey="row",
+                             gridspec_kw={"height_ratios": [1.5, 1, 1, 1]})
+    fig.subplots_adjust(hspace=0.25, wspace=0.3)
+
+    for col_idx, (n_states, col_title, state_names) in enumerate(groups):
+        sids = [s for s, ns in sid_nstates.items() if ns == n_states]
+        n_part = len(sids)
+
+        # Get ICI/reward data for this group
+        grp_ici = (ici_df[ici_df["n_states"] == n_states]
+                   if ici_df is not None else None)
+
+        # --- Helper to make bar + swarm panel ---
+        def _bar_swarm(ax, state_names, data_df, value_col, ylabel,
+                       panel_label, title_suffix):
+            x = np.arange(len(state_names))
+            means, cis = [], []
+            for rank, lbl in enumerate(state_names):
+                if data_df is not None:
+                    vals = data_df.loc[data_df["state_rank"] == rank,
+                                       value_col].dropna().values
+                else:
+                    vals = np.array([])
+                if len(vals) > 0:
+                    means.append(np.mean(vals))
+                    sem = (np.std(vals, ddof=1) / np.sqrt(len(vals))
+                           if len(vals) > 1 else 0)
+                    cis.append(1.96 * sem)
+                else:
+                    means.append(0)
+                    cis.append(0)
+
+            ax.bar(x, means, yerr=cis, color="white", edgecolor="black",
+                   width=0.6, capsize=4,
+                   error_kw={"lw": 1.2, "capthick": 1.2})
+
+            for rank, lbl in enumerate(state_names):
+                if data_df is not None:
+                    vals = data_df.loc[data_df["state_rank"] == rank,
+                                       value_col].dropna().values
+                else:
+                    vals = np.array([])
+                if len(vals) > 0:
+                    jitter = np.random.default_rng(
+                        rank + col_idx * 10).uniform(-0.2, 0.2, len(vals))
+                    ax.scatter(x[rank] + jitter, vals, s=10, alpha=0.4,
+                               color="black", edgecolors="none", zorder=4)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(state_names, fontsize=10, rotation=20,
+                               ha="right")
+            if col_idx == 0:
+                ax.set_ylabel(ylabel, fontsize=_LABEL_FS,
+                              labelpad=_LABELPAD)
+            ax.set_title(
+                f"{panel_label}. {col_title} {title_suffix} (N={n_part})",
+                fontsize=_TITLE_FS, fontweight="bold", loc="left")
+            sns.despine(ax=ax)
+
+        # Row 1: 3D scatter of P(Choose A) x P(Reinforcement) x ICI
+        ax = fig.add_subplot(4, 2, 1 + col_idx, projection="3d")
+        axes[0, col_idx].set_visible(False)  # hide the 2D axis
+
+        # Row 2: P(Choose A)
+        _bar_swarm(axes[1, col_idx], state_names, grp_ici,
+                   "mean_choice_a", "P(Choose A)",
+                   panel_labels[2 + col_idx], "")
+        axes[1, col_idx].axhline(0.5, color="gray", ls=":", alpha=0.3)
+
+        # Row 3: ICI
+        if grp_ici is not None and "mean_ici" in grp_ici.columns:
+            _bar_swarm(axes[2, col_idx], state_names, grp_ici,
+                       "mean_ici", "Median ICI (s)",
+                       panel_labels[4 + col_idx], "")
+            axes[2, col_idx].set_ylim(0, 1.3)
+
+        # Row 4: P(Reinforcement) bars
+        _bar_swarm(axes[3, col_idx], state_names, grp_ici,
+                   "mean_reward", "P(Reinforcement)",
+                   panel_labels[6 + col_idx], "")
+
+        _state_colors_3d = ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+
+        if grp_ici is not None and "mean_ici" in grp_ici.columns:
+            for rank, lbl in enumerate(state_names):
+                s = grp_ici[grp_ici["state_rank"] == rank]
+                if len(s) == 0:
+                    continue
+                ax.scatter(s["mean_choice_a"], s["mean_reward"],
+                           s["mean_ici"],
+                           s=40, alpha=0.6,
+                           color=_state_colors_3d[
+                               rank % len(_state_colors_3d)],
+                           marker=_STATE_MARKERS[
+                               rank % len(_STATE_MARKERS)],
+                           label=lbl, edgecolors="white", linewidth=0.3)
+
+        ax.set_xlabel("P(Choose A)", fontsize=14, labelpad=10)
+        ax.set_ylabel("P(Reinforcement)", fontsize=14, labelpad=10)
+        ax.set_zlabel("Median ICI (s)", fontsize=14, labelpad=10)
+        ax.set_zlim(0, 1.3)
+        ax.view_init(elev=20, azim=-60)
+        ax.tick_params(labelsize=10)
+        ax.legend(fontsize=10, loc="upper left")
+        ax.set_title(
+            f"{panel_labels[col_idx]}. {col_title} (N={n_part})",
+            fontsize=_TITLE_FS, fontweight="bold", loc="left", pad=10)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure5_hmm_states.{fmt}"), config)
+    _save(fig, os.path.join(fig_dir, f"figure6_hmm_states.{fmt}"), config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 6 – HMM Phase Alignment
+# Figure 7 – HMM Phase Alignment
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure6_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
+def figure7_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
                                 config):
     """State assignments as colored bands aligned with phase boundaries."""
     hmm_seqs = analysis_results.get("hmm_state_sequences", {})
     if not hmm_seqs:
-        print("  Figure 6 skipped: no HMM state sequences.")
+        print("  Figure 7 skipped: no HMM state sequences.")
         return
 
     # State colors for background bands
@@ -1018,7 +1248,7 @@ def figure6_hmm_phase_alignment(analysis_results, events_df, fig_dir, fmt,
                      _state_colors)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure6_hmm_phase_alignment.{fmt}"),
+    _save(fig, os.path.join(fig_dir, f"figure7_hmm_phase_alignment.{fmt}"),
           config)
 
     # --- Supplemental: all participants, 6 per page ---
@@ -1084,10 +1314,10 @@ def _plot_hmm_panels(axes, sids, hmm_seqs, events_df, config, state_colors):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 7 – Convergent Cross-Mapping
+# Figure 8 – Convergent Cross-Mapping
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure7_ccm(analysis_results, fig_dir, fmt, config):
+def figure8_ccm(analysis_results, fig_dir, fmt, config):
     """CCM convergence per phase: reward -> choice vs choice -> reward."""
     ccm_df = analysis_results.get("ccm")
     if ccm_df is None or len(ccm_df) == 0:
@@ -1185,7 +1415,7 @@ def figure7_ccm(analysis_results, fig_dir, fmt, config):
         sns.despine(ax=ax)
 
     plt.tight_layout()
-    _save(fig, os.path.join(fig_dir, f"figure7_ccm.{fmt}"), config)
+    _save(fig, os.path.join(fig_dir, f"figure8_ccm.{fmt}"), config)
 
     # --- Supplemental: individual CCM convergence curves ---
     supp_dir = os.path.join(fig_dir, "supplements")
@@ -1279,10 +1509,10 @@ def figure7_ccm(analysis_results, fig_dir, fmt, config):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Figure 8 – Recurrence Quantification Analysis
+# Figure 9 – Recurrence Plots
 # ═══════════════════════════════════════════════════════════════════════════
 
-def figure8_rqa(analysis_results, events_df, fig_dir, fmt, config):
+def figure9_rqa(analysis_results, events_df, fig_dir, fmt, config):
     """Individual recurrence plots in a 7 col x 9 row grid.
 
     First two cells are reference plots (Lorenz attractor for chaotic
@@ -1290,7 +1520,7 @@ def figure8_rqa(analysis_results, events_df, fig_dir, fmt, config):
     the 60 participants plus one unused cell.
     """
     if "rolling_choice_prop_a_clicks" not in events_df.columns:
-        print("  Figure 8 skipped: no rolling choice proportion.")
+        print("  Figure 9 skipped: no rolling choice proportion.")
         return
 
     pbs = config.get("phase_boundaries", [])
@@ -1424,4 +1654,75 @@ def figure8_rqa(analysis_results, events_df, fig_dir, fmt, config):
 
         suffix = f"_{fig_idx + 1}" if n_figs > 1 else ""
         _save(fig, os.path.join(fig_dir,
-              f"figure8_rqa{suffix}.{fmt}"), config)
+              f"figure9_rqa{suffix}.{fmt}"), config)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Figure 10 – RQA Metrics by Phase
+# ═══════════════════════════════════════════════════════════════════════════
+
+def figure10_rqa_by_phase(analysis_results, fig_dir, fmt, config):
+    """Box plots of 7 RQA metrics broken out by experimental phase.
+
+    Layout: 4 rows x 2 columns (last cell empty), matching the original
+    rqa_by_phase figure. Metrics: Recurrence Rate, Determinism,
+    Mean Diagonal Length, Max Diagonal Length, Entropy (Diagonal),
+    Laminarity, Trapping Time.
+    """
+    rqa = analysis_results.get("rqa")
+    if rqa is None or len(rqa) == 0:
+        print("  Figure 10 skipped: no RQA results.")
+        return
+
+    rqa_df = pd.DataFrame(rqa) if isinstance(rqa, list) else rqa.copy()
+
+    # Keep only per-phase rows (not full_session)
+    if "scope" in rqa_df.columns:
+        rqa_df = rqa_df[rqa_df["scope"] != "full_session"].copy()
+    if "phase_id" in rqa_df.columns:
+        rqa_df = rqa_df[rqa_df["phase_id"].isin([1, 2, 3, 4])].copy()
+
+    if len(rqa_df) == 0:
+        print("  Figure 10 skipped: no per-phase RQA data.")
+        return
+
+    # Map phase IDs to short labels
+    phase_label_map = {1: "Symmetric", 2: "A-adv", 3: "B-adv", 4: "Scarcity"}
+    rqa_df["phase_label"] = rqa_df["phase_id"].map(phase_label_map)
+    phase_order = ["Symmetric", "A-adv", "B-adv", "Scarcity"]
+
+    metrics = [
+        ("recurrence_rate", "Recurrence Rate"),
+        ("determinism", "Determinism"),
+        ("mean_diagonal_length", "Mean Diagonal Length"),
+        ("max_diagonal_length", "Max Diagonal Length"),
+        ("entropy_diagonal", "Entropy (Diagonal)"),
+        ("laminarity", "Laminarity"),
+        ("trapping_time", "Trapping Time"),
+    ]
+
+    fig, axes = plt.subplots(4, 2, figsize=(10, 16))
+    axes_flat = axes.flatten()
+
+    for i, (col, label) in enumerate(metrics):
+        ax = axes_flat[i]
+        if col not in rqa_df.columns:
+            ax.set_visible(False)
+            continue
+
+        plot_df = rqa_df[["phase_label", col]].dropna()
+        sns.boxplot(data=plot_df, x="phase_label", y=col,
+                    order=phase_order, color="white", fliersize=0,
+                    linewidth=1, ax=ax)
+        sns.stripplot(data=plot_df, x="phase_label", y=col,
+                      order=phase_order, color="gray", alpha=0.5,
+                      size=3, jitter=True, ax=ax)
+        ax.set_ylabel(label, fontsize=_LABEL_FS)
+        ax.set_xlabel("")
+        sns.despine(ax=ax)
+
+    # Hide unused last cell
+    axes_flat[-1].set_visible(False)
+
+    plt.tight_layout()
+    _save(fig, os.path.join(fig_dir, f"figure10_rqa_by_phase.{fmt}"), config)

@@ -35,27 +35,57 @@ def run_phase_analysis(events_df: pd.DataFrame, metrics_df: pd.DataFrame,
 
 
 def _phase_descriptives(events_df: pd.DataFrame, phase_boundaries: list) -> pd.DataFrame:
-    """Compute descriptive stats per phase across all sessions."""
+    """Compute descriptive stats per phase, session-weighted.
+
+    Each session contributes equally to the phase-level mean and SD
+    (participant-weighted, not click-weighted). This matches the manuscript's
+    reporting convention: per-session means first, then averaged across
+    participants.
+    """
     rows = []
     for pb in phase_boundaries:
         pid = pb["id"]
         phase_df = events_df[events_df["phase_id"] == pid]
         if len(phase_df) == 0:
             continue
+
+        grouped = phase_df.groupby("session_id")
+
+        choice_a = grouped["choice_a"].mean()
+        reward = grouped["reward_outcome"].mean()
+
         row = {
             "phase_id": pid,
             "label": pb["label"],
             "n_clicks": len(phase_df),
             "n_sessions": phase_df["session_id"].nunique(),
-            "mean_choice_prop_a": phase_df["choice_a"].mean(),
-            "sd_choice_prop_a": phase_df.groupby("session_id")["choice_a"].mean().std(),
-            "mean_reward_rate": phase_df["reward_outcome"].mean(),
-            "mean_switch_rate": phase_df["switch_flag_verified"].mean()
-                if "switch_flag_verified" in phase_df else np.nan,
-            "mean_ici_s": phase_df["ici_s"].mean() if "ici_s" in phase_df else np.nan,
+            "mean_choice_prop_a": choice_a.mean(),
+            "sd_choice_prop_a": choice_a.std(),
+            "mean_reward_rate": reward.mean(),
+            "sd_reward_rate": reward.std(),
         }
+
+        if "switch_flag_verified" in phase_df.columns:
+            switch = grouped["switch_flag_verified"].mean()
+            row["mean_switch_rate"] = switch.mean()
+            row["sd_switch_rate"] = switch.std()
+        else:
+            row["mean_switch_rate"] = np.nan
+            row["sd_switch_rate"] = np.nan
+
+        if "ici_s" in phase_df.columns:
+            ici = grouped["ici_s"].mean()
+            row["mean_ici_s"] = ici.mean()
+            row["sd_ici_s"] = ici.std()
+        else:
+            row["mean_ici_s"] = np.nan
+            row["sd_ici_s"] = np.nan
+
         if "choice_optimal" in phase_df.columns:
-            row["mean_proportion_optimal"] = phase_df["choice_optimal"].mean()
+            opt = grouped["choice_optimal"].mean()
+            row["mean_proportion_optimal"] = opt.mean()
+            row["sd_proportion_optimal"] = opt.std()
+
         rows.append(row)
     return pd.DataFrame(rows)
 

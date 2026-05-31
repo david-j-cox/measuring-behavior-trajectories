@@ -128,13 +128,16 @@ def _compute_adaptation_lag(sdf: pd.DataFrame, phase_boundaries: dict,
 
     # Phase 2: A is better -> look for prop_a > threshold
     # Phase 3: B is better -> look for prop_a < (1-threshold)
-    # Phase 4: symmetric scarcity -> no clear target
+    # Phase 4: symmetric scarcity -> return to neutral band [1-threshold, threshold]
+    target_col = "rolling_choice_prop_a_clicks"
     if target_phase_id == 2:
-        target_col = "rolling_choice_prop_a_clicks"
         adapted = phase_df[target_col] > threshold
     elif target_phase_id == 3:
-        target_col = "rolling_choice_prop_a_clicks"
         adapted = phase_df[target_col] < (1 - threshold)
+    elif target_phase_id == 4:
+        # Adaptation = returned to symmetric range (0.4 <= prop_a <= 0.6 when threshold=0.6)
+        adapted = ((phase_df[target_col] >= 1 - threshold) &
+                   (phase_df[target_col] <= threshold))
     else:
         return np.nan
 
