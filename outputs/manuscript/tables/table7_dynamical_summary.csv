@@ -1,0 +1,8 @@
+Metric,Mean (SD),Median,Range,N
+Recurrence Rate (RQA),0.401 (0.133),0.378,"[0.223, 0.862]",99
+Determinism (RQA),0.969 (0.022),0.975,"[0.888, 0.999]",99
+Laminarity (RQA),0.988 (0.010),0.992,"[0.945, 0.999]",99
+Trapping Time (RQA),10.086 (5.114),9.024,"[4.371, 34.179]",99
+DFA Exponent (alpha),0.692 (0.135),0.690,"[0.509, 1.022]",20
+Sample Entropy,0.537 (0.228),0.524,"[0.106, 0.908]",20
+Nonlinearity (S-Map delta-rho),0.0186 (0.0205),0.0090,"[0.0007, 0.0679]",20

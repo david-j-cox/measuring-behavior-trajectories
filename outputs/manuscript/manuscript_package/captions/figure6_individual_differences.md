@@ -1,0 +1,1 @@
+**Figure 6. Individual differences in behavioral strategy.** Distributions across participants (N = 60) for: switch rate, mean run length, adaptation lag, proportion optimal choices, and choice entropy. Substantial between-participant variability is evident, suggesting participants occupy different dynamic strategy regimes.

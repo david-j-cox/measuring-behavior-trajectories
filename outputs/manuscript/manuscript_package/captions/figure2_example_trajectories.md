@@ -1,0 +1,1 @@
+**Figure 2. Example behavioral trajectories.** Choice sequences, rolling choice proportion (20-click window), cumulative score, and hidden latent values for representative sessions. Dotted vertical lines mark hidden phase boundaries. Behavior is visibly non-stationary, with shifts in allocation following changes in the latent reward environment.

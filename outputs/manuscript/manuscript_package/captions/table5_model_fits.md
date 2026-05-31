@@ -1,0 +1,1 @@
+**Table 5. Model fit statistics.** Log-likelihood, AIC, BIC, and predictive accuracy for each behavioral model, averaged across sessions. Lower AIC/BIC indicates better fit after penalizing for model complexity.

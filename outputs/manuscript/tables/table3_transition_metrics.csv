@@ -1,0 +1,4 @@
+Transition,Adaptation Lag (s),N Adapted,Overshoot,Switch Burst Rate,Post-Transition Instability
+Phase 1 -> 2,8.5 (8.6),60/60,0.120 (0.126),0.271 (0.282),0.0223 (0.0168)
+Phase 2 -> 3,11.1 (7.9),60/60,0.069 (0.094),0.257 (0.233),0.0377 (0.0324)
+Phase 3 -> 4,N/A,N/A,0.110 (0.115),0.232 (0.198),0.0187 (0.0159)

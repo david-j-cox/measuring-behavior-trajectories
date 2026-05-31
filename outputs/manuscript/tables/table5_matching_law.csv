@@ -1,0 +1,62 @@
+Session,Sensitivity (s),Bias (b),R²,n bins,Classification
+mmgkzukxb91bym,0.368,1.171,0.444,38,Undermatching
+mmglwqjl2idcz3,1.006,1.034,0.985,17,Strict matching
+mmgnnwif7rgnag,0.7,1.024,0.792,36,Undermatching
+mmgp4bc84vs4qt,0.358,0.892,0.389,46,Undermatching
+mmgp4tj5hwk1cr,0.56,1.022,0.435,37,Undermatching
+mmgp5kmoz5itw5,0.769,1.134,0.94,13,Undermatching
+mmgp92mez7ni28,0.318,1.185,0.181,33,Undermatching
+mmgp978syi159c,0.59,0.961,0.611,34,Undermatching
+mmgp9zmmm2qlbz,0.483,0.837,0.563,38,Undermatching
+mmgpaypnopkm1q,0.534,0.914,0.707,36,Undermatching
+mmgpciu4e2yunz,0.492,1.013,0.429,43,Undermatching
+mmgpgi4g1jzpv2,0.439,1.045,0.399,38,Undermatching
+mmgpiq4ct3r8s1,0.326,0.817,0.126,29,Undermatching
+mmgpqa16u4u07b,0.307,0.923,0.226,38,Undermatching
+mmgpy8l4xh9nto,0.283,1.023,0.392,32,Undermatching
+mmgq3qouddjc6z,0.456,0.969,0.534,33,Undermatching
+mmgqyc7ozjls4u,0.314,0.993,0.491,40,Undermatching
+mmgr4s188ypj5i,0.582,1.008,0.544,38,Undermatching
+mmgr4wtlfg07a6,0.34,0.964,0.56,36,Undermatching
+mmgr8c41csnx7y,0.706,0.991,0.59,27,Undermatching
+mmh0l2c7syhpy7,0.336,1.236,0.355,43,Undermatching
+mmh0l48d4j1y4y,0.311,1.063,0.239,33,Undermatching
+mmh0le5hn8utpd,0.498,0.99,0.753,42,Undermatching
+mmh0lgop76n6ez,0.418,0.979,0.604,39,Undermatching
+mmh0lku3ip54e4,0.479,0.919,0.703,38,Undermatching
+mmh0lpcdm9wdcu,1.034,1.217,0.875,8,Strict matching
+mmh0m3latwun95,0.353,1.059,0.475,34,Undermatching
+mmh0mm0schxk59,0.444,1.133,0.556,35,Undermatching
+mmh0mmptqfyu87,0.818,0.97,0.884,24,Undermatching
+mmh0nnjg95y0zn,0.261,1.037,0.226,35,Undermatching
+mmh0ocgvf4p325,0.547,1.028,0.594,38,Undermatching
+mmh0opq734nw1a,0.404,0.964,0.277,32,Undermatching
+mmh0ozswma6i3j,0.483,0.892,0.423,35,Undermatching
+mmh0pa4lgnz2nd,0.413,1.023,0.652,40,Undermatching
+mmh0pj6zqdvwmg,0.115,1.013,0.03,41,Undermatching
+mmh0pjhqfbciu8,0.676,0.951,0.92,34,Undermatching
+mmh0puch6r88f0,0.722,1.093,0.853,39,Undermatching
+mmh0r154h7irg3,0.278,0.876,0.157,39,Undermatching
+mmh0r34rqnesgg,0.738,1.026,0.901,35,Undermatching
+mmh0rqn6g1cadb,0.732,1.076,0.887,31,Undermatching
+mmh0tro0khha5x,0.578,1.024,0.585,36,Undermatching
+mmh0uacrkmrg83,0.806,1.051,0.913,30,Undermatching
+mmh0ueb9o9dis7,0.352,0.92,0.427,31,Undermatching
+mmh0vbvu4yn6l1,0.526,0.963,0.592,39,Undermatching
+mmh0vh7gck5q8n,0.633,1.107,0.893,31,Undermatching
+mmh0wavycmn4y3,0.476,0.957,0.592,41,Undermatching
+mmh0x9u4kgtvxn,0.304,1.08,0.27,33,Undermatching
+mmh0yegg0emahk,0.572,0.95,0.752,30,Undermatching
+mmh115pr1lsvkw,0.266,1.086,0.338,38,Undermatching
+mmh16ou0ocswzc,0.392,1.026,0.634,40,Undermatching
+mmh19xdl74m2p5,0.57,1.075,0.513,33,Undermatching
+mmh1cyh0ahaw8s,0.425,1.01,0.552,37,Undermatching
+mmh1eq07kkdfkw,0.267,0.858,0.318,40,Undermatching
+mmh1jfrxrszco0,0.917,1.038,0.972,19,Strict matching
+mmh1qje9negjr0,0.728,1.033,0.542,37,Undermatching
+mmh1sestgp7zew,0.349,1.037,0.213,33,Undermatching
+mmh1tezp242ppu,0.437,1.053,0.728,39,Undermatching
+mmh1wzqpu4iob1,0.541,0.971,0.786,36,Undermatching
+mmh250jg0prrne,0.466,0.976,0.715,38,Undermatching
+mmh28cu87aoonk,0.559,0.9,0.619,40,Undermatching
+"Mean (SD), N=60",0.503 (0.193),1.010 (0.086),0.561 (0.240),,57 under / 3 strict / 0 over

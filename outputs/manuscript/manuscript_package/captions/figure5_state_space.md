@@ -1,0 +1,1 @@
+**Figure 5. State-space trajectories.** Behavioral state plotted as rolling choice proportion vs. rolling reward rate, colored by experimental phase. Trajectories move through distinct regions of the state space across phases rather than clustering at a single equilibrium, indicating structured dynamics and path dependence.

@@ -1,0 +1,1 @@
+**Figure 7. Model comparison.** Left: mean BIC across sessions for each candidate model (lower is better). Right: delta-BIC from the best-fitting model per session. The logistic model provided the best fit on average. Models that incorporate dynamic value tracking consistently outperform static heuristics.
