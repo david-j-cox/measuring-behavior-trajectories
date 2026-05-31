@@ -19,7 +19,7 @@ analysis/venv/
 service-account-key.json
 
 # Manuscript
-# manuscript/
+manuscript/
 
 # Legacy output directories (superseded by analysis/data/ and analysis/figures/)
 analysis/outputs/
